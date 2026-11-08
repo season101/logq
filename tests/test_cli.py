@@ -20,6 +20,34 @@ def test_query_prints_alerts_events_footer(fake_docker, capsys):
     assert out[-1] == "-- 4 of 4 matches · 2 containers (api, web) · 15m · level>=warn"
 
 
+def test_jaeger_link_when_running(fake_docker_trace, monkeypatch, capsys):
+    monkeypatch.setattr("logq.jaeger.status", lambda: "running")
+    assert main(["query", "-p", "p", "--trace", "7f3a9c21"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == \
+        "-- view in Jaeger: http://localhost:16686/trace/7f3a9c21aabbccddeeff001122334455"
+
+
+def test_no_link_without_jaeger(fake_docker_trace, monkeypatch, capsys):
+    monkeypatch.setattr("logq.jaeger.status", lambda: None)
+    main(["query", "-p", "p", "--trace", "7f3a9c21"])
+    assert "view in Jaeger" not in capsys.readouterr().out
+
+
+def test_no_link_when_jaeger_status_unreachable(fake_docker_trace, monkeypatch, capsys):
+    def unreachable():
+        raise DockerUnreachable("down")
+    monkeypatch.setattr("logq.jaeger.status", unreachable)
+    assert main(["query", "-p", "p", "--trace", "7f3a9c21"]) == 0
+    assert "view in Jaeger" not in capsys.readouterr().out
+
+
+def test_no_status_call_without_trace_flag(fake_docker_trace, monkeypatch):
+    def boom():
+        raise AssertionError("jaeger.status called")
+    monkeypatch.setattr("logq.jaeger.status", boom)
+    assert main(["query", "-p", "p"]) == 0
+
+
 def test_limit_keeps_most_recent(fake_docker_lines, capsys):
     main(["query", "-p", "p", "-n", "50"])
     out = capsys.readouterr().out.splitlines()

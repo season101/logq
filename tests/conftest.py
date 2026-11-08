@@ -25,6 +25,7 @@ def _install(monkeypatch, containers, reads):
 
     monkeypatch.setattr("logq.docker.list_containers", lambda: containers)
     monkeypatch.setattr("logq.docker.read_logs", read_logs)
+    monkeypatch.setattr("logq.jaeger.status", lambda: None)  # no test touches Docker for Jaeger
     monkeypatch.setattr("logq.cli.TZ", timezone.utc)
     monkeypatch.setattr(Path, "cwd", classmethod(lambda cls: Path("/w/p")))
     return read_calls
@@ -52,3 +53,9 @@ def fake_docker_read_error(monkeypatch):
         "db-1": LogRead([], False, "Error response from daemon: No such container"),
     }
     return _install(monkeypatch, [api, web, _container("db-1", "db")], reads)
+
+
+@pytest.fixture
+def fake_docker_trace(monkeypatch):
+    line = '2026-11-08T02:20:07.0Z {"level":"error","msg":"boom","trace_id":"7f3a9c21aabbccddeeff001122334455"}'
+    return _install(monkeypatch, [_container("api-1", "api")], {"api-1": LogRead([line], False, None)})

@@ -108,6 +108,18 @@ def _pick(args, q: flt.Query):
     return project, in_project, [c for c in in_project if not q.services or c.service in q.services]
 
 
+def _jaeger_link(args, events) -> str | None:
+    """The Jaeger link for the earliest matched event that has a trace; only with --trace and a running logq-jaeger."""
+    trace = next((e.trace for e in events if e.trace), None) if args.trace else None
+    if not trace:
+        return None
+    try:
+        running = jaeger.status() == "running"
+    except docker.DockerUnreachable:  # the link is a bonus: the query itself already read logs
+        return None
+    return f"-- view in Jaeger: {jaeger.trace_url(trace)}" if running else None
+
+
 def _query(args) -> int:
     try:
         q = _build_query(args)
@@ -130,6 +142,8 @@ def _query(args) -> int:
     capped = [c.name for c, r in zip(selected, reads) if r.capped]
     lines = alerts + [render.format_event(e, TZ, args.full) for e in shown]
     lines.append(render.footer(len(shown), len(events), [c.service for c in selected], window, q.level, args.trace, capped))
+    if link := _jaeger_link(args, events):  # all matches, not just the shown ones
+        lines.append(render.redact(link))  # the other lines come out of render already redacted
     print("\n".join(lines))
     return 0
 
