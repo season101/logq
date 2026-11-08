@@ -30,7 +30,7 @@ logq query --trace 7f3a9c21              # one request across all services
 - Levels: `debug`, `info`, `warn`, `error`, `fatal`.
 - Other flags: `-s` (repeatable), `--until`, `--full` for whole stack traces. The field filters (`--route`, `--method`, `--status`, `--func`) drop events that lack the field, and without `-l` they read every level, because request lines are INFO.
 - `-s` narrows what is read and the footer. Container alerts (`! ... exited/unhealthy/restarting`) still cover the whole project. An unknown `-s` exits 1 and lists the services.
-- The footer says how many events matched and what was dropped. Read `level>=` in it before concluding nothing happened.
+- The footer says how many events matched and what was dropped. Read `level>=` in it before concluding nothing happened; `N more below warn` counts lines the default level hid, so rerun with `-l info` or `-l debug`.
 - Exit codes: 0 ok (including no matches), 1 usage error or unknown project/service, 2 Docker unreachable.
 
 ## 3. Tracing loop

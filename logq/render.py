@@ -113,7 +113,7 @@ def format_repeat(e: Event, count: int, seconds: float) -> str:
 
 
 def footer(shown: int, matched: int, containers: list[str], window: str, level: int, trace: str | None, capped: list[str],
-           project: str | None = None) -> str:
+           project: str | None = None, below: int = 0) -> str:
     n = len(containers)
     names = f" ({', '.join(containers)})" if 0 < n <= 8 else ""
     parts = [
@@ -127,4 +127,6 @@ def footer(shown: int, matched: int, containers: list[str], window: str, level: 
         parts.append(f"trace={trace[:8]}")
     if capped:
         parts.append(f"capped at {READ_CAP} lines: {', '.join(capped)}")
+    if below:  # matched every filter but the default level: a quiet `level>=warn` is not "nothing happened"
+        parts.append(f"{below} more below {LEVEL_NAMES[level].lower()}")
     return "-- " + " · ".join(parts)

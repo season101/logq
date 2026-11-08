@@ -17,7 +17,12 @@ def test_query_prints_alerts_events_footer(fake_docker, capsys):
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith("! web-1 exited(1)")
     assert [l.split()[2] for l in out[1:-1]] == ["WARN", "WARN", "ERROR", "ERROR"]
-    assert out[-1] == "-- 4 of 4 matches · 2 containers (api, web) · project p · 15m · level>=warn"
+    assert out[-1] == "-- 4 of 4 matches · 2 containers (api, web) · project p · 15m · level>=warn · 2 more below warn"
+
+
+def test_no_below_hint_when_level_is_given(fake_docker, capsys):
+    assert main(["query", "-p", "p", "-l", "warn"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "-- 4 of 4 matches · 2 containers (api, web) · project p · 15m · level>=warn"
 
 
 def test_jaeger_link_when_running(fake_docker_trace, monkeypatch, capsys):
@@ -94,7 +99,7 @@ def test_service_filter_reads_only_selected_but_alerts_on_all(fake_docker, capsy
     out = capsys.readouterr().out.splitlines()
     assert read_calls == ["api-1"]
     assert out[0].startswith("! web-1 exited(1)")
-    assert out[-1] == "-- 4 of 4 matches · 1 container (api) · project p · 15m · level>=warn"
+    assert out[-1] == "-- 4 of 4 matches · 1 container (api) · project p · 15m · level>=warn · 2 more below warn"
 
 
 def test_unknown_service_exit_1_before_reading(fake_docker, capsys):

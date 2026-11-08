@@ -114,6 +114,7 @@ Output, one line per event:
 - Messages are cut to 300 characters unless `--full`.
 - The footer always prints and names the project right after the containers. With no matches it reads `-- no matches · 4 containers (…) · project <name> · 15m · level>=warn`.
 - When more events matched than `--limit`, the footer says `50 of 212 matches (oldest dropped)`.
+- Without `-l`, events that matched every other filter but sit below the default level are counted at the end: `· 12 more below warn`, so a plain-text error misjudged as info still shows up as a number.
 - Reading is capped at 50,000 lines per container; the footer notes when a cap was hit.
 
 ### 4.4 `logq follow`
@@ -164,7 +165,7 @@ Level words are matched case-insensitively (`WARNING`, `warn`, `Warn` → warn; 
 
 ### 5.2 Plain-text lines
 
-- Level is inferred from a word in the line: `TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL|PANIC`, bracketed or bare, upper case. A Python `Traceback (most recent call last):` header or a `SomethingError:`/`SomethingException:` line counts as error. A `SomethingWarning:` line counts as warn. Otherwise the level is info. The stream (stdout or stderr) is not used, because many servers, gunicorn included, write normal output to stderr.
+- Level is inferred, first match wins: a glog/klog prefix at line start (`E1108 `, with `I`/`W`/`E`/`F` for info/warn/error/fatal); a line-leading `error:`, `fatal:` or `panic:` (any case); a logfmt `level=<word>`; a level word in the line: `TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL|PANIC` or zerolog's `TRC|DBG|INF|WRN|ERR|FTL|PNC` (whole words, upper case, bracketed or bare, so `npm ERR!` is error), or nginx's lower-case `[debug]`, `[info]`, `[notice]`, `[warn]`, `[error]`, `[crit]`, `[alert]`, `[emerg]` (`crit` and above are fatal). A Python `Traceback (most recent call last):` header or a `SomethingError:`/`SomethingException:` line counts as error, a Rust `panicked at` line as fatal, and a `SomethingWarning:` line as warn. Otherwise the level is info. The stream (stdout or stderr) is not used, because many servers, gunicorn included, write normal output to stderr.
 - Multi-line grouping: a line joins the previous event from the same container when it is blank or starts with whitespace, or starts with `Caused by:`, `During handling of the above exception` or `The above exception was the direct cause`. A `Traceback (most recent call last):` line also joins when the event's last line has a Docker timestamp at most 100 ms earlier (so `logger.exception` output and chained tracebacks fold into one event), otherwise it starts a new event; after it the indented lines join, and the first non-indented line ends the block and becomes the error summary (in a chain, the last summary is the error). A line starting with `{` never joins and never ends a traceback; it always starts its own event. Joined lines raise the event's level to the highest level any of them implies. Trailing blank lines are dropped, and a blank line with nothing to join is skipped.
 - Plain-text lines are best-effort. This is why apps should follow the logging contract.
 

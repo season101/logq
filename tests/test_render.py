@@ -223,3 +223,7 @@ def test_java_cause_is_shown():
 
 def test_footer_names_the_project_after_the_containers():
     assert footer(3, 3, ["api"], "15m", 30, None, [], project="p") == "-- 3 of 3 matches · 1 container (api) · project p · 15m · level>=warn"
+
+def test_footer_counts_events_hidden_below_the_default_level():
+    assert footer(0, 0, ["api"], "15m", 30, None, [], project="p", below=3) == \
+        "-- no matches · 1 container (api) · project p · 15m · level>=warn · 3 more below warn"

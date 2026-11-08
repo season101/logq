@@ -95,7 +95,7 @@ def test_grouper_tracks_last_feed():
 @pytest.mark.parametrize("p, level", [
     ("[INFO] hi", "info"), ("TRACE x", "debug"), ("WARNING x", "warn"), ("CRITICAL x", "fatal"), ("PANIC x", "fatal"),
     ("ValueError: x", "error"), ("a.b.BarException: x", "error"), ("DeprecationWarning: x", "warn"),
-    ("error: lower case is not a level", "info"), ("hello", "info"),
+    ("error: lower case at line start", "error"), ("hello", "info"),
 ])
 def test_plain_text_levels(p, level):
     assert parse_payload(p)["level"] == LEVELS[level]
@@ -178,3 +178,26 @@ def test_typed_json_error_wins_over_stack():
 def test_all_zero_ids_are_absent(p, trace, span):
     f = parse_payload(p)
     assert (f["trace"], f["span"]) == (trace, span)
+
+@pytest.mark.parametrize("p, level", [
+    # glog / klog
+    ("E1108 02:20:07.123456       1 main.go:12] Failed to load IAM configuration", "error"),
+    ("W1108 02:20:07.123456       1 main.go:12] slow", "warn"), ("I1108 02:20:07.1 1 x.go:1] ok", "info"),
+    ("F1108 02:20:07.1 1 x.go:1] dead", "fatal"),
+    # logfmt: an explicit level beats a level word in the message
+    ('time=2026-11-08T02:20:07Z level=error msg="db down"', "error"), ("level=warning msg=x", "warn"),
+    ('level=info msg="retry after ERROR"', "info"), ("level=5 msg=x", "info"),
+    # nginx
+    ("2026/11/08 02:20:07 [error] 29#29: *1 open() failed", "error"), ("2026/11/08 02:20:07 [crit] 1#1: x", "fatal"),
+    ("2026/11/08 02:20:07 [warn] 1#1: x", "warn"), ("2026/11/08 02:20:07 [notice] 1#1: x", "info"),
+    # zerolog console, npm
+    ("2026-11-08T02:20:07Z ERR db down", "error"), ("2026-11-08T02:20:07Z WRN slow", "warn"),
+    ("2026-11-08T02:20:07Z INF ok", "info"), ("2026-11-08T02:20:07Z DBG x", "debug"), ("npm ERR! code ELIFECYCLE", "error"),
+    # line-leading error:/fatal:/panic:, Rust panics
+    ("error: get filer configuration: dial tcp: connection refused", "error"), ("fatal: not a git repository", "fatal"),
+    ("panic: runtime error: index out of range", "fatal"), ("thread 'main' panicked at src/main.rs:2:5:", "fatal"),
+    # not levels
+    ("the error: field was empty", "info"), ("Errors: 0", "info"), ("information only", "info"), ("err=nil", "info"),
+])
+def test_common_plain_text_formats(p, level):
+    assert parse_payload(p)["level"] == LEVELS[level]

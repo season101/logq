@@ -1,5 +1,6 @@
 """Command line entry point: `ps`, `query`, `follow` and `ui` (spec sections 4 and 9a)."""
 import argparse
+import dataclasses
 import os
 import re
 import signal
@@ -136,13 +137,16 @@ def _query(args) -> int:
     now = datetime.now(timezone.utc)
     alerts = [a for c in in_project if (a := render.format_container_alert(c, now))]  # the whole project, whatever -s says
     alerts += [render.redact(f"! {c.name}: {r.error}") for c, r in zip(selected, reads) if r.error]
-    events = [e for c, r in zip(selected, reads) for e in parse.parse_stream(r.lines, c.name, c.service, c.project) if flt.matches(e, q)]
+    parsed = [e for c, r in zip(selected, reads) for e in parse.parse_stream(r.lines, c.name, c.service, c.project)]
+    events = [e for e in parsed if flt.matches(e, q)]
+    every_level = dataclasses.replace(q, level=parse.LEVELS["debug"])
+    below = 0 if args.level else sum(flt.matches(e, every_level) for e in parsed) - len(events)
     events.sort(key=lambda e: e.ts)  # stable: equal timestamps keep their per-container order
     shown = events[-args.limit:]
     window = args.since + (f"..{args.until}" if args.until else "")
     capped = [c.name for c, r in zip(selected, reads) if r.capped]
     lines = alerts + [render.format_event(e, TZ, args.full) for e in shown]
-    lines.append(render.footer(len(shown), len(events), [c.service for c in selected], window, q.level, args.trace, capped, project))
+    lines.append(render.footer(len(shown), len(events), [c.service for c in selected], window, q.level, args.trace, capped, project, below))
     if link := _jaeger_link(args, events):  # all matches, not just the shown ones
         lines.append(render.redact(link))  # the other lines come out of render already redacted
     print("\n".join(lines))

@@ -10,7 +10,9 @@ LEVELS = {"debug": 10, "info": 20, "warn": 30, "error": 40, "fatal": 50}
 LEVEL_NAMES = {v: k.upper() for k, v in LEVELS.items()}
 
 _WORDS = {"trace": 10, "debug": 10, "info": 20, "warn": 30, "warning": 30,
-          "error": 40, "critical": 50, "fatal": 50, "panic": 50}
+          "error": 40, "critical": 50, "fatal": 50, "panic": 50,
+          "notice": 20, "crit": 50, "alert": 50, "emerg": 50,  # nginx
+          "trc": 10, "dbg": 10, "inf": 20, "wrn": 30, "err": 40, "ftl": 50, "pnc": 50}  # zerolog
 _PINO = {10: 10, 20: 10, 30: 20, 40: 30, 50: 40, 60: 50}
 
 _LEVEL_KEYS = ("severity_text", "level", "levelname", "log.level", "severity")
@@ -31,7 +33,13 @@ _ID_KEYS = {*_ALIASES["trace"], *_ALIASES["span"]}
 _NO_ID = re.compile(r"[0-]+")  # OTel's log correlation writes "0" outside a span; all-zero IDs are not IDs
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-_LEVEL_WORD = re.compile(r"\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL|PANIC)\b")
+# Upper-case level words (zerolog's `ERR` also catches `npm ERR!`), or nginx's lower-case bracketed ones.
+_LEVEL_WORD = re.compile(r"\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL|PANIC|TRC|DBG|INF|WRN|ERR|FTL|PNC)\b"
+                         r"|\[(debug|info|notice|warn|error|crit|alert|emerg)\]")
+_GLOG = re.compile(r"([IWEF])\d{4} ")  # glog/klog: `E1108 02:20:07.123456 1 main.go:12] ...`
+_GLOG_LEVELS = dict(zip("IWEF", (20, 30, 40, 50)))
+_LEAD = re.compile(r"(error|fatal|panic):", re.I)  # at line start: `error: get filer configuration: ...`
+_LOGFMT = re.compile(r"\blevel=(\w+)")
 _ERR = re.compile(r"\b[\w.]*(?:Error|Exception):")
 _WARN = re.compile(r"\b[\w.]*Warning:")
 _TB = "Traceback (most recent call last):"
@@ -100,10 +108,16 @@ def _level(v) -> int:
 
 
 def _plain_level(s: str) -> int:
-    if m := _LEVEL_WORD.search(s):
+    if m := _GLOG.match(s):
+        return _GLOG_LEVELS[m[1]]
+    if (m := _LEAD.match(s) or _LOGFMT.search(s)) and m[1].lower() in _WORDS:  # explicit, so it beats a word in the message
         return _WORDS[m[1].lower()]
+    if m := _LEVEL_WORD.search(s):
+        return _WORDS[(m[1] or m[2]).lower()]
     if s.startswith(_TB) or _ERR.search(s):
         return LEVELS["error"]
+    if "panicked at" in s:  # Rust
+        return LEVELS["fatal"]
     return LEVELS["warn"] if _WARN.search(s) else LEVELS["info"]
 
 
