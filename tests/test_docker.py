@@ -1,8 +1,9 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 import pytest
-from logq.docker import Container, UnknownProject, containers_from_inspect, select_project, parse_since
+from logq.docker import Container, UnknownProject, containers_from_inspect, follow_logs, select_project, parse_since
 FIX = Path(__file__).parent / "fixtures"
 
 def test_containers_from_inspect():
@@ -36,3 +37,11 @@ def test_parse_since_ok(ok):
 def test_parse_since_bad(bad):
     with pytest.raises(ValueError):
         parse_since(bad)
+
+def test_follow_logs_args(monkeypatch):
+    argv = []
+    monkeypatch.setattr("subprocess.Popen", lambda cmd, **kw: argv.append(cmd))
+    follow_logs(c("api-1", "p", "/w/p"))
+    follow_logs(c("api-1", "p", "/w/p"), since=datetime(2026, 11, 8, 12, 0, 0, 123456, tzinfo=ZoneInfo("America/Chicago")))
+    assert argv == [["docker", "logs", "-f", "--timestamps", "--tail", "0", "api-1"],
+                    ["docker", "logs", "-f", "--timestamps", "--since", "2026-11-08T18:00:00.123456Z", "api-1"]]

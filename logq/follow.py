@@ -50,7 +50,10 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
     """Print until every source ends, which real Docker never does: SIGTERM (see cli) ends it."""
     items: queue.Queue = queue.Queue()  # Events from the readers, formatted lines from the events thread
     procs, threads, groupers = [], [], []
+    attaching = threading.Lock()  # guards reading, deferred, stopping and appends to procs
     reading: set[str] = set()  # ids whose log stream is still open
+    deferred: dict[str, Container] = {}  # restarted (same id) while the old reader was still open
+    stopping = False  # set at shutdown, so no child is spawned after the snapshot of procs
 
     def spawn(target, *args):
         t = threading.Thread(target=target, args=args, daemon=True)
@@ -66,16 +69,28 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
             with lock:
                 for e in g.feed(ts, payload):
                     items.put(e)
-        reading.discard(c.id)
         with lock:
             for e in g.flush():
                 items.put(e)
+        with attaching:
+            reading.discard(c.id)
+            if nxt := deferred.pop(c.id, None):
+                start(nxt, nxt.started_at)
 
-    def attach(c: Container):
-        if c.id in reading or (q.services and c.service not in q.services):
+    def attach(c: Container, since=None):
+        if q.services and c.service not in q.services:
+            return
+        with attaching:
+            if c.id in reading:
+                deferred.setdefault(c.id, c)  # the earliest start, so --since covers every later run too
+            else:
+                start(c, since)
+
+    def start(c: Container, since):  # caller holds `attaching`
+        if stopping:
             return
         reading.add(c.id)
-        procs.append(proc := open_logs(c))
+        procs.append(proc := open_logs(c, since=since))
         g, lock = Grouper(c.name, c.service, c.project, clock), threading.Lock()
         groupers.append((g, lock))
         spawn(read, c, proc, g, lock)
@@ -100,7 +115,7 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
             if action == "start" and cid:
                 try:
                     for c in docker.inspect([cid]):
-                        attach(c)
+                        attach(c, c.started_at)  # from its start, so lines printed before the reader attached show too
                 except docker.DockerUnreachable:  # the events stream ends too, nothing to attach to
                     pass
 
@@ -113,7 +128,8 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
     try:
         for c in containers:
             attach(c)
-        procs.append(ev_proc := open_events(project, project != "all" and all(c.working_dir is None for c in containers)))
+        with attaching:
+            procs.append(ev_proc := open_events(project, project != "all" and all(c.working_dir is None for c in containers)))
         spawn(watch, ev_proc)
         while True:
             try:
@@ -133,7 +149,10 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
                     for e in g.flush_stale():
                         items.put(e)
     finally:
-        for p in procs:
+        with attaching:
+            stopping = True
+            children = list(procs)
+        for p in children:
             p.terminate()
-        for p in procs:
+        for p in children:
             p.wait()

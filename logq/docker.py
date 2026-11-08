@@ -3,7 +3,7 @@ import json
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from logq.parse import split_docker_line
@@ -138,8 +138,10 @@ def read_logs(c: Container, since: str, until: str | None, cap: int = 50000) -> 
     return LogRead(lines, len(lines) == cap, error)
 
 
-def follow_logs(c: Container) -> subprocess.Popen:
-    return subprocess.Popen(["docker", "logs", "-f", "--timestamps", "--tail", "0", c.id], **_POPEN)
+def follow_logs(c: Container, since: datetime | None = None) -> subprocess.Popen:
+    """New lines only, or with `since` everything from then on (a reader attached after `start` must not miss a crash)."""
+    start = ["--since", since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")] if since else ["--tail", "0"]
+    return subprocess.Popen(["docker", "logs", "-f", "--timestamps", *start, c.id], **_POPEN)
 
 
 def events(project: str, pseudo: bool) -> subprocess.Popen:
