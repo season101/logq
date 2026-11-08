@@ -44,16 +44,33 @@ class Collapser:
         done, self._closed = [(e, n) for e, _, n in self._closed if n], []
         return done
 
+    def flush(self) -> list[tuple[Event, int, float]]:
+        """At shutdown: every window with repeats, with the seconds it covered so far."""
+        now, windows = self.clock(), self._closed + list(self._open.values())
+        self._open, self._closed = {}, []
+        return [(e, n, min(now - start, self.window_s)) for e, start, n in windows if n]
+
+
+def _running(c: Container) -> bool:
+    try:
+        return any(x.state == "running" for x in docker.inspect([c.id]))
+    except docker.DockerUnreachable:  # the events stream ends too and says so
+        return False
+
 
 def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo | None, out: TextIO = sys.stdout,
-               open_logs=docker.follow_logs, open_events=docker.events, clock=time.monotonic) -> None:
-    """Print until every source ends, which real Docker never does: SIGTERM (see cli) ends it."""
+               open_logs=docker.follow_logs, open_events=docker.events, clock=time.monotonic,
+               stop: threading.Event | None = None) -> int:
+    """Print until `stop` is set (SIGTERM or Ctrl-C, see cli) or every source ends, which real Docker never does.
+    Returns 2 if the docker events stream ended on its own, else 0."""
+    stop = stop or threading.Event()
     items: queue.Queue = queue.Queue()  # Events from the readers, formatted lines from the events thread
     procs, threads, groupers = [], [], []
     attaching = threading.Lock()  # guards reading, deferred, stopping and appends to procs
     reading: set[str] = set()  # ids whose log stream is still open
     deferred: dict[str, Container] = {}  # restarted (same id) while the old reader was still open
     stopping = False  # set at shutdown, so no child is spawned after the snapshot of procs
+    events_ended = False
 
     def spawn(target, *args):
         t = threading.Thread(target=target, args=args, daemon=True)
@@ -61,10 +78,12 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
         t.start()
 
     def read(c: Container, proc, g: Grouper, lock: threading.Lock):
+        last = None  # Docker's error text, merged from stderr
         for line in proc.stdout:
             try:
                 ts, payload = split_docker_line(line.rstrip("\r\n"))
-            except ValueError:  # Docker error text, merged from stderr
+            except ValueError:
+                last = line.strip() or last
                 continue
             with lock:
                 for e in g.feed(ts, payload):
@@ -72,7 +91,12 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
         with lock:
             for e in g.flush():
                 items.put(e)
+        proc.stdout.close()
+        proc.wait()  # reap it, or every restart leaves a zombie and an open pipe
+        if last and not (stopping or stop.is_set()) and _running(c):  # the stream died, not the container
+            items.put(redact(f"! {c.name}: {last}"))
         with attaching:
+            groupers.remove((g, lock))
             reading.discard(c.id)
             if nxt := deferred.pop(c.id, None):
                 start(nxt, nxt.started_at)
@@ -96,11 +120,14 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
         spawn(read, c, proc, g, lock)
 
     def watch(proc):
+        nonlocal events_ended
         health: dict[str, str] = {}  # last health status seen per container id
+        last = None  # Docker's error text, merged from stderr
         for line in proc.stdout:
             try:
                 evt = json.loads(line)
-            except ValueError:  # Docker error text, merged from stderr
+            except ValueError:
+                last = line.strip() or last
                 continue
             if not isinstance(evt, dict):
                 continue
@@ -118,6 +145,9 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
                         attach(c, c.started_at)  # from its start, so lines printed before the reader attached show too
                 except docker.DockerUnreachable:  # the events stream ends too, nothing to attach to
                     pass
+        if not (stopping or stop.is_set()):  # without events no restart is seen, so say so loudly
+            events_ended = True
+            items.put(redact(f"! docker events ended: {last or 'stream closed'}"))
 
     def say(text: str):
         print(text, file=out, flush=True)
@@ -131,12 +161,12 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
         with attaching:
             procs.append(ev_proc := open_events(project, project != "all" and all(c.working_dir is None for c in containers)))
         spawn(watch, ev_proc)
-        while True:
+        while not stop.is_set():  # the signal handlers only set `stop`: raising inside items.get() breaks its lock
             try:
                 item = items.get(timeout=0.25)
             except queue.Empty:
                 if not any(t.is_alive() for t in threads) and items.empty():
-                    return
+                    break
                 item = None
             for e, n in col.due():
                 say(format_repeat(e, n, REPEAT_S))
@@ -149,6 +179,11 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
                     for e in g.flush_stale():
                         items.put(e)
     finally:
+        try:
+            for e, n, s in col.flush():
+                say(format_repeat(e, n, s))
+        except BrokenPipeError:  # the reader is gone; the children must still stop
+            pass
         with attaching:
             stopping = True
             children = list(procs)
@@ -156,3 +191,4 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
             p.terminate()
         for p in children:
             p.wait()
+    return 2 if events_ended else 0

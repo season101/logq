@@ -202,6 +202,9 @@ def test_repeat_line():
     assert format_repeat(ev(level=40, error="KeyError: 'sku'"), 39, 30) == "↻ api ERROR KeyError: 'sku' repeated 39x in 30s"
     assert format_repeat(ev(level=30, msg="retry token=abc1"), 3, 30) == "↻ api WARN retry token=[REDACTED] repeated 3x in 30s"
 
+def test_repeat_line_prints_rounded_seconds():
+    assert format_repeat(ev(level=40, error="KeyError: 'sku'"), 2, 7.4).endswith("repeated 2x in 7s")
+
 def test_repeat_line_names_the_request():
     e = ev(msg="request finished", method="POST", route="/api/orders", status=500, duration_ms=812, func="create_order")
     assert format_repeat(e, 3, 30) == "↻ api INFO POST /api/orders 500 request finished repeated 3x in 30s"

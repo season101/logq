@@ -4,6 +4,7 @@ import os
 import re
 import signal
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -157,9 +158,10 @@ def _follow(args) -> int:
     if not (picked := _pick(args, q)):
         return 1
     project, _, selected = picked  # readers for the selected services; docker events cover the whole project
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # Monitor's timeout: unwind so run_follow stops its children
-    follow.run_follow(project, selected, q, TZ, out=sys.stdout)
-    return 0
+    stop = threading.Event()
+    for sig in (signal.SIGTERM, signal.SIGINT):  # Monitor's timeout, Ctrl-C: run_follow sees the flag and stops its children
+        signal.signal(sig, lambda *_: stop.set())
+    return follow.run_follow(project, selected, q, TZ, out=sys.stdout, stop=stop)
 
 
 def _ui(args) -> int:

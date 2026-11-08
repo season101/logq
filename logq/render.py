@@ -109,9 +109,9 @@ def format_docker_event(evt: dict, tz: tzinfo | None) -> str | None:
     return redact(f"{_clock(ts, tz)} ! {a.get('com.docker.compose.service') or a.get('name', '?')} {what}")
 
 
-def format_repeat(e: Event, count: int, window_s: int) -> str:
+def format_repeat(e: Event, count: int, seconds: float) -> str:
     head = " ".join([e.service, LEVEL_NAMES[e.level], *(str(x) for x in (e.method, e.route, e.status) if x is not None)])
-    return redact(f"↻ {head} {_cut(redact(e.error or e.msg))} repeated {count}x in {window_s}s")  # redact before the cut
+    return redact(f"↻ {head} {_cut(redact(e.error or e.msg))} repeated {count}x in {round(seconds)}s")  # redact before the cut
 
 
 def footer(shown: int, matched: int, containers: list[str], window: str, level: int, trace: str | None, capped: list[str]) -> str:

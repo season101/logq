@@ -177,6 +177,12 @@ def test_field_filter_without_level_reads_all_levels(fake_docker, capsys, flag):
 def test_follow_reads_selected_services(fake_docker, monkeypatch):
     calls = []
     monkeypatch.setattr("signal.signal", lambda *a: None)
-    monkeypatch.setattr("logq.follow.run_follow", lambda project, containers, q, tz, out: calls.append((project, [c.name for c in containers], q.level)))
+    monkeypatch.setattr("logq.follow.run_follow", lambda project, containers, q, tz, out, stop: calls.append((project, [c.name for c in containers], q.level)) or 0)
     assert main(["follow", "-p", "p", "-s", "api"]) == 0
     assert calls == [("p", ["api-1"], 30)]
+
+
+def test_follow_exit_code_comes_from_run_follow(fake_docker, monkeypatch):
+    monkeypatch.setattr("signal.signal", lambda *a: None)
+    monkeypatch.setattr("logq.follow.run_follow", lambda *a, **kw: 2)  # the docker events stream ended
+    assert main(["follow", "-p", "p"]) == 2

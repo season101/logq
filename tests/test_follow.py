@@ -1,7 +1,14 @@
 import io
 import json
+import re
+import signal
+import subprocess
+import sys
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
 
 from logq.docker import Container
 from logq.filter import Query
@@ -28,6 +35,29 @@ class FakeProc:
 
     def wait(self):
         self.waited = True
+
+
+class Pipe(list):
+    closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class BlockingProc(FakeProc):
+    """Like `docker logs -f` / `docker events`: no EOF until terminated."""
+
+    def __init__(self, lines):
+        self.done = threading.Event()
+        super().__init__(self._lines(lines))
+
+    def _lines(self, lines):
+        yield from lines
+        self.done.wait(5)
+
+    def terminate(self):
+        super().terminate()
+        self.done.set()
 
 
 def docker_event(action, cid="id1", service="api"):
@@ -103,7 +133,8 @@ def test_health_prints_only_changes_to_or_from_unhealthy():
     out = io.StringIO()
     run_follow("p", [API], Query(), UTC, out=out, open_logs=lambda c, since=None: FakeProc([]), open_events=lambda p, pseudo: FakeProc(evts))
     assert [line.split(" ", 1)[1] for line in out.getvalue().splitlines()[1:]] == [
-        "! api health: unhealthy", "! api health: unhealthy", "! api health: healthy"]
+        "! api health: unhealthy", "! api health: unhealthy", "! api health: healthy",
+        "docker events ended: Error response from daemon: not json"]  # the stream ending is reported too
 
 def test_start_attaches_only_selected_services(monkeypatch):
     web = Container("id3", "web-1", "p", "web", "/w/p", "running", None, 0, 0, None, None)
@@ -158,3 +189,110 @@ def test_mid_run_attach_reads_since_container_start(monkeypatch):
     run_follow("p", [API], Query(), UTC, out=io.StringIO(), open_logs=open_logs,
                open_events=lambda p, pseudo: FakeProc([docker_event("start", "id2")]))
     assert opened == [("api-1", None), ("api-2", STARTED)]
+
+
+def test_collapser_flush_reports_windows_with_repeats_and_elapsed_seconds():
+    now = [0.0]
+    col = Collapser(30, clock=lambda: now[0])
+    a, b = ev(level=40, msg="a"), ev(level=40, msg="b")
+    for e in (a, a, a, b):
+        col.offer(e)
+    now[0] = 7.4
+    assert col.flush() == [(a, 2, 7.4)]  # b never repeated
+    assert col.flush() == []
+
+
+def lines(*msgs):
+    return [f"2026-11-08T02:20:0{i}.0Z ERROR {m}" for i, m in enumerate(msgs)]
+
+
+def test_stop_event_flushes_repeats_and_stops_children():
+    stop, procs = threading.Event(), []
+
+    class Out(io.StringIO):
+        def write(self, s):
+            if "other" in s:  # the three booms were offered before it, so stop now
+                stop.set()
+            return super().write(s)
+
+    def spawn(lines):
+        procs.append(BlockingProc(lines))
+        return procs[-1]
+
+    out = Out()
+    rc = run_follow("p", [API], Query(), UTC, out=out, stop=stop,
+                    open_logs=lambda c, since=None: spawn(lines("boom", "boom", "boom", "other", "end")),
+                    open_events=lambda p, pseudo: spawn([]))
+    assert rc == 0
+    assert re.search(r"^↻ api ERROR ERROR boom repeated 2x in \ds$", out.getvalue(), re.M)
+    assert len(procs) == 2 and all(p.terminated and p.waited for p in procs)
+
+
+def test_reader_error_is_printed_while_container_runs(monkeypatch):
+    monkeypatch.setattr("logq.docker.inspect", lambda ids: [API])
+    out = io.StringIO()
+    logs = ["2026-11-08T02:20:07.0Z ERROR boom", "error from daemon in stream: token=abc123 lost"]
+    run_follow("p", [API], Query(), UTC, out=out, open_logs=lambda c, since=None: FakeProc(logs),
+               open_events=lambda p, pseudo: FakeProc([]))
+    assert "! api-1: error from daemon in stream: token=[REDACTED] lost" in out.getvalue().splitlines()
+
+
+def test_reader_error_is_quiet_once_the_container_stopped(monkeypatch):
+    exited = Container("id1", "api-1", "p", "api", "/w/p", "exited", None, 0, 0, None, None)
+    monkeypatch.setattr("logq.docker.inspect", lambda ids: [exited])
+    out = io.StringIO()
+    run_follow("p", [API], Query(), UTC, out=out, open_logs=lambda c, since=None: FakeProc(["some docker text"]),
+               open_events=lambda p, pseudo: FakeProc([]))
+    assert "! api-1:" not in out.getvalue()
+
+
+@pytest.mark.parametrize("evts, shown", [
+    ([], "! docker events ended: stream closed"),
+    (["Error response from daemon: invalid filter"], "! docker events ended: Error response from daemon: invalid filter"),
+])
+def test_events_stream_end_is_printed_and_exits_2(evts, shown):
+    out = io.StringIO()
+    rc = run_follow("p", [API], Query(), UTC, out=out, open_logs=lambda c, since=None: FakeProc([]),
+                    open_events=lambda p, pseudo: FakeProc(evts))
+    assert rc == 2 and out.getvalue().splitlines()[-1] == shown
+
+
+def test_ended_reader_is_reaped_before_shutdown():
+    reaped = threading.Event()
+
+    class LogProc(FakeProc):
+        def wait(self):
+            self.waits.append(self.terminated)  # shutdown terminates before it waits
+            super().wait()
+            reaped.set()
+
+    log = LogProc([])
+    log.waits = []
+    log.stdout = Pipe(["2026-11-08T02:20:07.0Z ERROR boom\n"])
+
+    def events():
+        reaped.wait(5)  # hold the run open until the reader is done
+        yield from ()
+
+    run_follow("p", [API], Query(), UTC, out=io.StringIO(), open_logs=lambda c, since=None: log,
+               open_events=lambda p, pseudo: FakeProc(events()))
+    assert log.stdout.closed and log.waits[0] is False  # the reader reaped it while the run went on
+
+
+DRIVER = Path(__file__).with_name("follow_driver.py")
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT])
+def test_signal_ends_follow_cleanly(sig):
+    p = subprocess.Popen([sys.executable, str(DRIVER)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    killer = threading.Timer(15, p.kill)  # never hang the suite
+    killer.start()
+    try:
+        seen = [p.stdout.readline() for _ in range(3)]  # start line, the first boom, then ready (the repeats were offered)
+        assert seen[0].startswith("-- following api") and seen[2].rstrip().endswith("ERROR ERROR ready"), seen
+        p.send_signal(sig)
+        rest, err = p.communicate(timeout=10)
+    finally:
+        killer.cancel()
+    assert (p.returncode, err) == (0, "")
+    assert re.search(r"^↻ api ERROR ERROR boom repeated 2x in \ds$", rest, re.M), rest
