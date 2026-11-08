@@ -196,16 +196,20 @@ Always log with the context (`slog.InfoContext(ctx, "request finished", ...)`), 
 
 Logs say what happened; spans show which service called which, and which SQL statement or storage call took the time. `logq ui` starts one shared Jaeger on `localhost:16686`; apps export traces to it over OTLP. For local development only.
 
-Change the environment block of the recipes above to these four lines (Jaeger stores traces only, so keep `OTEL_METRICS_EXPORTER=none` and `OTEL_LOGS_EXPORTER=none`):
+Replace the environment block of the recipes above with these six lines (Jaeger stores traces only, so metrics and logs stay `none`):
 
 ```
 OTEL_SERVICE_NAME=<compose service>
 OTEL_TRACES_EXPORTER=otlp
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318
+OTEL_METRICS_EXPORTER=none
+OTEL_LOGS_EXPORTER=none
 ```
 
-Install the instrumentation for each resource the app uses. `opentelemetry-bootstrap -a install` detects them: Django, psycopg (SQL statements), requests/httpx (outgoing HTTP) and botocore (S3, which covers MinIO).
+In Python, install the OTLP exporter: `opentelemetry-exporter-otlp-proto-http` (or `opentelemetry-distro[otlp]`). `opentelemetry-distro` alone does not ship it, so without it `OTEL_TRACES_EXPORTER=otlp` fails and no trace reaches Jaeger.
+
+Install the instrumentation for each resource the app uses. `opentelemetry-bootstrap -a install` detects them (instrumentations only, not exporters): Django, psycopg (SQL statements), requests/httpx (outgoing HTTP) and botocore (S3, which covers MinIO).
 
 Docker Desktop resolves `host.docker.internal`. Plain Docker Engine needs this on each exporting service:
 
@@ -217,7 +221,7 @@ Docker Desktop resolves `host.docker.internal`. Plain Docker Engine needs this o
 
 ### Request bodies in spans (opt-in)
 
-Spans carry routes and statements, not bodies. This Django middleware adds `http.request.body` and `http.response.body` when `LOGQ_CAPTURE_BODY=1`: JSON content types only, the first 2 KB, redacted first because Jaeger stores what it receives. **Local development only: never set it in a shared or production environment.** It is the one exception to "Never log whole bodies". The patterns copy logq's redaction (`logq/render.py`); do not import logq, it is not installed in app containers.
+Spans carry routes and statements, not bodies. This Django middleware adds `http.request.body` and `http.response.body` when `LOGQ_CAPTURE_BODY=1`: JSON content types only, the first 2 KB, redacted first because Jaeger stores what it receives. **Local development only: never set it in a shared or production environment.** It is the one exception to "Never log whole bodies". The patterns are adapted from logq's redaction (`logq/render.py`); do not import logq, it is not installed in app containers.
 
 ```python
 # logq_body_capture.py: add to MIDDLEWARE after OpenTelemetry's Django middleware.
@@ -227,7 +231,7 @@ from opentelemetry import trace
 
 _SECRET = re.compile(r"""
     (?P<k>\b(?:authorization|\w*(?:pass(?:word|wd)|secret|token|api[_-]?key)\w*)["']?\s*[:=]\s*)  # key: value
-        (?:"[^"]*"|(?:[a-z][\w-]*\s+)?[^\s,;&"'}]+)
+        (?:"(?:\\.|[^"\\])*"|(?:[a-z][\w-]*\s+)?[^\s,;&"'}]+)
   | \bbearer\s+[\w.~+/=-]+ | \beyJ[\w-]+\.[\w-]+\.[\w-]+                                          # Bearer, JWT
   | \b(?:AKIA[0-9A-Z]{16}|sk-[\w-]{20,}|ghp_\w{20,}|github_pat_\w{20,}|xox[bp]-[\w-]+)            # key shapes
   | (?<=://)[^\s:/@]*:[^\s/]+(?=@)                                                                # URL credentials
@@ -242,11 +246,17 @@ def capture_body(get_response):
         raise MiddlewareNotUsed  # off by default: Django drops this middleware
     def middleware(request):
         span = trace.get_current_span()
-        if "json" in request.content_type:
-            span.set_attribute("http.request.body", _clean(request.body))
+        try:  # a debug aid must never change the response; request bodies over 64 KB are skipped
+            if "json" in request.content_type and int(request.META.get("CONTENT_LENGTH") or 0) <= 65536:
+                span.set_attribute("http.request.body", _clean(request.body))
+        except Exception:
+            pass
         response = get_response(request)
-        if "json" in response.headers.get("Content-Type", "") and not response.streaming:
-            span.set_attribute("http.response.body", _clean(response.content))
+        try:
+            if "json" in response.headers.get("Content-Type", "") and not response.streaming:
+                span.set_attribute("http.response.body", _clean(response.content))
+        except Exception:
+            pass
         return response
     return middleware
 ```
