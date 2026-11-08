@@ -8,7 +8,7 @@ from pathlib import Path
 
 from logq import docker, filter as flt, parse, render
 
-TZ = datetime.now().astimezone().tzinfo  # tests override this
+TZ = None  # None: astimezone(None) resolves the local zone per timestamp, so DST changes show correctly; tests override
 
 
 class _Parser(argparse.ArgumentParser):
@@ -98,11 +98,16 @@ def _query(args) -> int:
     except (ValueError, re.error) as e:
         print(f"logq: {e}", file=sys.stderr)
         return 1
-    _, selected = docker.select_project(docker.list_containers(), args.project, Path.cwd())
+    project, in_project = docker.select_project(docker.list_containers(), args.project, Path.cwd())
+    services = {c.service for c in in_project}
+    if missing := [s for s in q.services if s not in services]:
+        print(f"unknown service: {', '.join(missing)}; services in {project}: {', '.join(sorted(services))}", file=sys.stderr)
+        return 1
+    selected = [c for c in in_project if not q.services or c.service in q.services]
     with ThreadPoolExecutor(max_workers=8) as pool:
         reads = list(pool.map(lambda c: docker.read_logs(c, args.since, args.until), selected))
     now = datetime.now(timezone.utc)
-    alerts = [a for c in selected if (a := render.format_container_alert(c, now))]
+    alerts = [a for c in in_project if (a := render.format_container_alert(c, now))]  # the whole project, whatever -s says
     alerts += [render.redact(f"! {c.name}: {r.error}") for c, r in zip(selected, reads) if r.error]
     events = [e for c, r in zip(selected, reads) for e in parse.parse_stream(r.lines, c.name, c.service, c.project) if flt.matches(e, q)]
     events.sort(key=lambda e: e.ts)  # stable: equal timestamps keep their per-container order

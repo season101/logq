@@ -1,7 +1,13 @@
+import os
+import time
+from datetime import datetime, timezone
+
 import pytest
 
+from logq import cli, render
 from logq.cli import main
 from logq.docker import DockerUnreachable
+from logq.parse import Event
 
 
 def test_query_prints_alerts_events_footer(fake_docker, capsys):
@@ -50,6 +56,40 @@ def test_short_trace_is_usage_error(fake_docker):
 def test_usage_errors_exit_1(fake_docker, capsys, argv):
     assert main(argv) == 1
     assert capsys.readouterr().err
+
+
+def test_service_filter_reads_only_selected_but_alerts_on_all(fake_docker, capsys):
+    read_calls = fake_docker
+    assert main(["query", "-p", "p", "-s", "api"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert read_calls == ["api-1"]
+    assert out[0].startswith("! web-1 exited(1)")
+    assert out[-1] == "-- 4 of 4 matches · 1 container (api) · 15m · level>=warn"
+
+
+def test_unknown_service_exit_1_before_reading(fake_docker, capsys):
+    read_calls = fake_docker
+    assert main(["query", "-p", "p", "-s", "apii"]) == 1
+    assert capsys.readouterr().err.splitlines() == ["unknown service: apii; services in p: api, web"]
+    assert read_calls == []
+
+
+@pytest.fixture
+def chicago():
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "America/Chicago"
+    time.tzset()
+    yield
+    os.environ.pop("TZ") if old is None else os.environ.update(TZ=old)
+    time.tzset()
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="needs time.tzset")
+@pytest.mark.parametrize("ts, shown", [("2026-10-31T20:00:00", "15:00:00.000"), ("2026-11-08T18:00:00", "12:00:00.000")])
+def test_local_zone_follows_dst(chicago, ts, shown):
+    assert cli.TZ is None
+    e = Event(datetime.fromisoformat(ts).replace(tzinfo=timezone.utc), "api-1", "api", "p", 40, "boom")
+    assert render.format_event(e, cli.TZ).startswith(shown)
 
 
 def test_ps_rows(fake_docker, capsys):

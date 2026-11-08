@@ -49,7 +49,7 @@ def ago(delta: timedelta) -> str:
     return f"{s}s"
 
 
-def _clock(ts: datetime, tz: tzinfo) -> str:
+def _clock(ts: datetime, tz: tzinfo | None) -> str:
     t = ts.astimezone(tz)
     return f"{t:%H:%M:%S}.{t.microsecond // 1000:03d}"
 
@@ -58,7 +58,7 @@ def _cut(body: str) -> str:
     return body if len(body) <= MSG_LIMIT else body[:MSG_LIMIT - 1] + "…"
 
 
-def format_event(e: Event, tz: tzinfo, full: bool = False) -> str:
+def format_event(e: Event, tz: tzinfo | None, full: bool = False) -> str:
     if e.error:
         body = e.error + (f" at {e.frame}" if e.frame else "") + (f" (+{len(e.extra)} lines)" if e.extra and not full else "")
         if e.msg and e.msg != e.error and not e.msg.startswith("Traceback"):
@@ -84,7 +84,7 @@ def format_container_alert(c: Container, now: datetime) -> str | None:
     return None
 
 
-def format_docker_event(evt: dict, tz: tzinfo) -> str | None:
+def format_docker_event(evt: dict, tz: tzinfo | None) -> str | None:
     a = evt.get("Actor", {}).get("Attributes", {})
     action = evt.get("Action", "")
     what = {"oom": "oom", "start": "started", "restart": "restarted", "destroy": "removed"}.get(action)
