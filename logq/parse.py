@@ -195,6 +195,10 @@ class Grouper:
         ev, self._cur, self._in_tb = self._cur, None, False
         return [_finish(ev)] if ev else []
 
+    def flush_stale(self, idle_s: float = 0.5) -> list[Event]:
+        """Flush the held event once no line has come for idle_s, so `follow` prints a container's last line."""
+        return self.flush() if self._cur and self.clock() - self.last_feed >= idle_s else []
+
 
 def parse_stream(lines: Iterable[str], container: str, service: str, project: str) -> list[Event]:
     g, events = Grouper(container, service, project), []

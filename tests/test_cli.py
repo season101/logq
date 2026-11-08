@@ -1,4 +1,6 @@
+import io
 import os
+import sys
 import time
 from datetime import datetime, timezone
 
@@ -97,3 +99,48 @@ def test_ps_rows(fake_docker, capsys):
     rows = [l.split() for l in capsys.readouterr().out.splitlines()]
     assert rows[0][:5] == ["p", "api", "api-1", "running", "-"]
     assert rows[1][0] == "!" and rows[1][4].startswith("exited")
+
+
+class _BrokenStdout(io.StringIO):
+    def __init__(self, fd, broken):
+        super().__init__()
+        self.fd, self.broken = fd, broken
+
+    def write(self, s):
+        if self.broken == "write":
+            raise BrokenPipeError
+        return super().write(s)
+
+    def flush(self):  # a short output sits in the buffer until the flush, so the pipe breaks there
+        if self.broken == "flush":
+            raise BrokenPipeError
+
+    def fileno(self):
+        return self.fd
+
+
+@pytest.mark.parametrize("broken", ["write", "flush"])
+def test_broken_pipe_exits_quietly(fake_docker, capsys, tmp_path, broken):
+    fd = os.open(tmp_path / "out", os.O_WRONLY | os.O_CREAT)
+    old, sys.stdout = sys.stdout, _BrokenStdout(fd, broken)  # swapped by hand: monkeypatch would restore it after capsys
+    try:
+        rc = main(["query", "-p", "p"])
+        quiet = os.path.samestat(os.fstat(fd), os.stat(os.devnull))  # so the flush at interpreter exit cannot fail
+    finally:
+        sys.stdout = old
+        os.close(fd)
+    assert rc == 0 and quiet
+    assert capsys.readouterr().err == ""
+
+
+def test_follow_unknown_service_exit_1(fake_docker, capsys):
+    assert main(["follow", "-p", "p", "-s", "apii"]) == 1
+    assert capsys.readouterr().err.splitlines() == ["unknown service: apii; services in p: api, web"]
+
+
+def test_follow_reads_selected_services(fake_docker, monkeypatch):
+    calls = []
+    monkeypatch.setattr("signal.signal", lambda *a: None)
+    monkeypatch.setattr("logq.follow.run_follow", lambda project, containers, q, tz, out: calls.append((project, [c.name for c in containers], q.level)))
+    assert main(["follow", "-p", "p", "-s", "api"]) == 0
+    assert calls == [("p", ["api-1"], 30)]

@@ -1,12 +1,14 @@
 """Command line entry point: `ps`, `query` and `follow` (spec section 4)."""
 import argparse
+import os
 import re
+import signal
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from logq import docker, filter as flt, parse, render
+from logq import docker, filter as flt, follow, parse, render
 
 TZ = None  # None: astimezone(None) resolves the local zone per timestamp, so DST changes show correctly; tests override
 
@@ -91,6 +93,16 @@ def _ps(args) -> int:
     return 0
 
 
+def _pick(args, q: flt.Query):
+    """(project, its containers, those whose service -s selects), or None after reporting an unknown service."""
+    project, in_project = docker.select_project(docker.list_containers(), args.project, Path.cwd())
+    services = {c.service for c in in_project}
+    if missing := [s for s in q.services if s not in services]:
+        print(f"unknown service: {', '.join(missing)}; services in {project}: {', '.join(sorted(services))}", file=sys.stderr)
+        return None
+    return project, in_project, [c for c in in_project if not q.services or c.service in q.services]
+
+
 def _query(args) -> int:
     try:
         q = _build_query(args)
@@ -98,12 +110,9 @@ def _query(args) -> int:
     except (ValueError, re.error) as e:
         print(f"logq: {e}", file=sys.stderr)
         return 1
-    project, in_project = docker.select_project(docker.list_containers(), args.project, Path.cwd())
-    services = {c.service for c in in_project}
-    if missing := [s for s in q.services if s not in services]:
-        print(f"unknown service: {', '.join(missing)}; services in {project}: {', '.join(sorted(services))}", file=sys.stderr)
+    if not (picked := _pick(args, q)):
         return 1
-    selected = [c for c in in_project if not q.services or c.service in q.services]
+    project, in_project, selected = picked
     with ThreadPoolExecutor(max_workers=8) as pool:
         reads = list(pool.map(lambda c: docker.read_logs(c, args.since, args.until), selected))
     now = datetime.now(timezone.utc)
@@ -121,8 +130,17 @@ def _query(args) -> int:
 
 
 def _follow(args) -> int:
-    print("follow: not implemented yet", file=sys.stderr)  # Task 7
-    return 1
+    try:
+        q = _build_query(args)
+    except (ValueError, re.error) as e:
+        print(f"logq: {e}", file=sys.stderr)
+        return 1
+    if not (picked := _pick(args, q)):
+        return 1
+    project, _, selected = picked  # readers for the selected services; docker events cover the whole project
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # Monitor's timeout: unwind so run_follow stops its children
+    follow.run_follow(project, selected, q, TZ, out=sys.stdout)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -131,7 +149,12 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as e:  # argparse usage error (already printed) or --help
         return e.code
     try:
-        return args.run(args)
+        rc = args.run(args)
+        sys.stdout.flush()  # inside the try: a short output only meets the closed pipe here
+        return rc
+    except BrokenPipeError:  # `logq follow | head -3`: the reader is gone, so stop quietly
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())  # the flush at exit would fail again
+        return 0
     except docker.UnknownProject as e:
         print("unknown project; running projects:", *e.projects, sep="\n", file=sys.stderr)
         return 1
