@@ -1,4 +1,4 @@
-"""Command line entry point: `ps`, `query` and `follow` (spec section 4)."""
+"""Command line entry point: `ps`, `query`, `follow` and `ui` (spec sections 4 and 9a)."""
 import argparse
 import os
 import re
@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from logq import docker, filter as flt, follow, parse, render
+from logq import docker, filter as flt, follow, jaeger, parse, render
 
 TZ = None  # None: astimezone(None) resolves the local zone per timestamp, so DST changes show correctly; tests override
 
@@ -46,6 +46,11 @@ def _parser() -> argparse.ArgumentParser:
     f = sub.add_parser("follow", help="stream matching events live")
     _selection_args(f)
     f.set_defaults(run=_follow)
+    ui = sub.add_parser("ui", help="start the shared local Jaeger trace UI")
+    mode = ui.add_mutually_exclusive_group()
+    mode.add_argument("--status", action="store_true", help="print the container state")
+    mode.add_argument("--stop", action="store_true", help="remove the container")
+    ui.set_defaults(run=_ui)
     return parser
 
 
@@ -140,6 +145,26 @@ def _follow(args) -> int:
     project, _, selected = picked  # readers for the selected services; docker events cover the whole project
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # Monitor's timeout: unwind so run_follow stops its children
     follow.run_follow(project, selected, q, TZ, out=sys.stdout)
+    return 0
+
+
+def _ui(args) -> int:
+    try:
+        if args.stop:
+            jaeger.down()
+            lines = [f"{jaeger.NAME} removed"]
+        elif args.status:
+            lines = [jaeger.status() or "missing"]
+        else:
+            jaeger.up()
+            lines = [f"Jaeger UI: {jaeger.UI_URL}",
+                     f"Claude MCP (once): claude mcp add --transport http --scope user jaeger {jaeger.MCP_URL}",
+                     "App env:", "  OTEL_TRACES_EXPORTER=otlp", "  OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf",
+                     "  OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318", "  OTEL_SERVICE_NAME=<compose service>"]
+    except jaeger.JaegerError as e:
+        print(render.redact(str(e)), file=sys.stderr)
+        return 1
+    print("\n".join(map(render.redact, lines)))
     return 0
 
 
