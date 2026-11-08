@@ -109,6 +109,7 @@ LOGGING = {
     }},
     "handlers": {"stdout": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout", "formatter": "json"}},
     "root": {"handlers": ["stdout"], "level": "INFO"},
+    "loggers": {"django": {"handlers": ["stdout"], "propagate": False}},  # replaces Django's DEBUG console handler: no record twice
 }
 ```
 

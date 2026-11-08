@@ -10,11 +10,11 @@ description: Use when debugging an app running in Docker or docker compose conta
 ## 1. See what runs
 
 ```bash
-logq ps                  # project picked from the current directory
-logq ps -p all           # every container on the daemon
+logq ps                  # every container on the daemon
+logq ps -p NAME          # one compose project
 ```
 
-Containers that are exited, restarting or unhealthy start with `!`. `-p NAME` picks a compose project. Without `-p`, logq matches the current directory (or a parent) to a project. If nothing matches, it exits 1 and lists the running projects.
+Containers that are exited, restarting or unhealthy start with `!`. `-p NAME` picks a compose project, `-p all` every container. Without `-p`, `query` and `follow` use the project whose folder is the current directory (or a parent); if none matches they exit 1 and list the running projects, and if several share the folder they name the others on stderr (pass `-p`).
 
 ## 2. Query recent events
 
@@ -40,7 +40,7 @@ logq query --trace 7f3a9c21              # one request across all services
 3. `logq query --trace <id>` (at least 8 characters, prefix match).
 4. Fix the code, repeat from step 1.
 
-If the response has no `X-Request-ID`, the app does not follow `docs/logging-contract.md`; fall back to `--since`, `-g` and `-l info`.
+If the response has no `X-Request-ID`, the app does not follow `/home/season101/Documents/GitHub/logq/docs/logging-contract.md`; fall back to `--since`, `-g` and `-l info`.
 
 ## 4. Watch live while the user reproduces a problem
 
@@ -56,10 +56,10 @@ Re-arm the Monitor when it expires if the user is still reproducing. Stop it wit
 
 ## 5. Traces in Jaeger
 
-Logs say what happened. Jaeger shows the path across services, SQL and storage calls, with timing. It needs the app to export spans (`docs/logging-contract.md`, "Traces in Jaeger").
+Logs say what happened. Jaeger shows the path across services, SQL and storage calls, with timing. It needs the app to export spans (`/home/season101/Documents/GitHub/logq/docs/logging-contract.md`, "Traces in Jaeger").
 
 1. `logq ui --status` prints `running`, `exited` or `missing`. If it is not `running`, check `docker image inspect cr.jaegertracing.io/jaegertracing/jaeger:2.23.0`. If the image is absent, ask the user before `logq ui`, because it pulls the image. Otherwise run `logq ui`: it starts Jaeger and prints the env lines the app needs. Traces are in memory and vanish when the container is removed.
-2. The tools come from the `jaeger` MCP server (registered once with `claude mcp add --transport http --scope user jaeger http://localhost:16686/api/ai/mcp/`). They are named `mcp__jaeger__<tool>`; if they are deferred, load them with ToolSearch first.
+2. The tools come from the `jaeger` MCP server. If they are missing, give the user this command and ask them to run it once; never run it yourself: `claude mcp add --transport http --scope user jaeger http://localhost:16686/api/ai/mcp/`. They are named `mcp__jaeger__<tool>`; if they are deferred, load them with ToolSearch first.
 3. Go from cheapest to most detailed. Stop as soon as you can answer:
    - `search_traces` (`service_name`, `with_errors`, `duration_min`, time range) lists trace summaries, no spans. `get_services` lists service names.
    - `get_trace_topology` (`trace_id`) maps the spans, parent to child, without attributes.
@@ -75,4 +75,4 @@ Logs say what happened. Jaeger shows the path across services, SQL and storage c
 - logq redacts secrets as `[REDACTED]`. Never print, guess or reconstruct a redacted value, and do not work around the redaction.
 - Use only the active `desktop-linux` Docker context. Never switch contexts and never pass `--context`.
 - Use logq, not raw `docker logs`. For state beyond `logq ps`, read targeted fields only: `docker inspect --format '{{.State.Status}} {{.State.ExitCode}}{{if .State.Health}} {{.State.Health.Status}}{{end}}' <name>`. Never dump full `docker inspect`, `docker compose config` or `docker exec ... env`; they print secrets that logq would redact.
-- If logs are unstructured or lack trace IDs, point the user to `docs/logging-contract.md` in the logq repo.
+- If logs are unstructured or lack trace IDs, point the user to `/home/season101/Documents/GitHub/logq/docs/logging-contract.md`.
