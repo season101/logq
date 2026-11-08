@@ -79,7 +79,7 @@ OTEL_METRICS_EXPORTER=none
 OTEL_LOGS_EXPORTER=none
 ```
 
-The three `none` exporters are the trace-IDs-only setup (phase 2): spans are created, so every log line gets a `trace_id`, but nothing is exported. A later phase switches traces to Jaeger.
+The three `none` exporters are the trace-IDs-only setup (phase 2): spans are created, so every log line gets a `trace_id`, but nothing is exported. "Traces in Jaeger (phase 3)" at the end of this file switches traces on.
 
 ### Python
 
@@ -191,3 +191,62 @@ func newLogger() *slog.Logger {
 Spans need a tracer provider and the W3C propagator at startup: `otel.SetTracerProvider(sdktrace.NewTracerProvider())` (no exporter is enough for trace IDs) and `otel.SetTextMapPropagator(propagation.TraceContext{})`. Wrap the server handler with `otelhttp.NewHandler` and the HTTP client transport with `otelhttp.NewTransport`.
 
 Always log with the context (`slog.InfoContext(ctx, "request finished", ...)`), or the span is not visible to the handler. Write the `request finished` line and set `X-Request-ID` (from `trace.SpanContextFromContext(r.Context()).TraceID().String()`) in a middleware placed inside `otelhttp.NewHandler`.
+
+## Traces in Jaeger (phase 3)
+
+Logs say what happened; spans show which service called which, and which SQL statement or storage call took the time. `logq ui` starts one shared Jaeger on `localhost:16686`; apps export traces to it over OTLP. For local development only.
+
+Change the environment block of the recipes above to these four lines (Jaeger stores traces only, so keep `OTEL_METRICS_EXPORTER=none` and `OTEL_LOGS_EXPORTER=none`):
+
+```
+OTEL_SERVICE_NAME=<compose service>
+OTEL_TRACES_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318
+```
+
+Install the instrumentation for each resource the app uses. `opentelemetry-bootstrap -a install` detects them: Django, psycopg (SQL statements), requests/httpx (outgoing HTTP) and botocore (S3, which covers MinIO).
+
+Docker Desktop resolves `host.docker.internal`. Plain Docker Engine needs this on each exporting service:
+
+```yaml
+    extra_hosts: ["host.docker.internal:host-gateway"]
+```
+
+`logq query --trace <id>` then ends with a `-- view in Jaeger:` link. It opens a real trace only when the logged `trace_id` is the OpenTelemetry trace ID, as this contract asks.
+
+### Request bodies in spans (opt-in)
+
+Spans carry routes and statements, not bodies. This Django middleware adds `http.request.body` and `http.response.body` when `LOGQ_CAPTURE_BODY=1`: JSON content types only, the first 2 KB, redacted first because Jaeger stores what it receives. **Local development only: never set it in a shared or production environment.** It is the one exception to "Never log whole bodies". The patterns copy logq's redaction (`logq/render.py`); do not import logq, it is not installed in app containers.
+
+```python
+# logq_body_capture.py: add to MIDDLEWARE after OpenTelemetry's Django middleware.
+import os, re
+from django.core.exceptions import MiddlewareNotUsed
+from opentelemetry import trace
+
+_SECRET = re.compile(r"""
+    (?P<k>\b(?:authorization|\w*(?:pass(?:word|wd)|secret|token|api[_-]?key)\w*)["']?\s*[:=]\s*)  # key: value
+        (?:"[^"]*"|(?:[a-z][\w-]*\s+)?[^\s,;&"'}]+)
+  | \bbearer\s+[\w.~+/=-]+ | \beyJ[\w-]+\.[\w-]+\.[\w-]+                                          # Bearer, JWT
+  | \b(?:AKIA[0-9A-Z]{16}|sk-[\w-]{20,}|ghp_\w{20,}|github_pat_\w{20,}|xox[bp]-[\w-]+)            # key shapes
+  | (?<=://)[^\s:/@]*:[^\s/]+(?=@)                                                                # URL credentials
+""", re.I | re.X)
+
+def _clean(raw):  # redact first, then cut to 2 KB, so the cut cannot leave half a secret
+    text = _SECRET.sub(lambda m: (m["k"] or "") + "[REDACTED]", raw.decode("utf-8", "replace"))
+    return text.encode()[:2048].decode("utf-8", "ignore")
+
+def capture_body(get_response):
+    if os.environ.get("LOGQ_CAPTURE_BODY") != "1":
+        raise MiddlewareNotUsed  # off by default: Django drops this middleware
+    def middleware(request):
+        span = trace.get_current_span()
+        if "json" in request.content_type:
+            span.set_attribute("http.request.body", _clean(request.body))
+        response = get_response(request)
+        if "json" in response.headers.get("Content-Type", "") and not response.streaming:
+            span.set_attribute("http.response.body", _clean(response.content))
+        return response
+    return middleware
+```
