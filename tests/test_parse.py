@@ -113,3 +113,48 @@ def test_service_trace_and_raw():
 def test_untimestamped_lines_skipped_and_newlines_stripped():
     ev = parse_stream(["Error response from daemon: x\n", "2026-11-08T02:20:08.0Z ok\r\n"], "c", "s", "p")
     assert [e.msg for e in ev] == ["ok"]
+
+def line(ms, payload):
+    s, ms = divmod(ms, 1000)
+    return f"2026-11-08T02:20:{s:02d}.{ms:03d}Z {payload}"
+
+def seq(payloads, start=0):  # Docker timestamps 1 ms apart
+    return [line(start + i, p) for i, p in enumerate(payloads)]
+
+def run(lines):
+    return parse_stream(lines, "c", "s", "p")
+
+HEAD = "ERROR Internal Server Error: /api/orders"
+TB = ["Traceback (most recent call last):", '  File "/app/x.py", line 3, in f', '    sku = data["sku"]', "KeyError: 'sku'"]
+
+def test_traceback_folds_into_preceding_log_line():
+    (e,) = run(seq([HEAD, *TB]))
+    assert (e.level, e.msg, e.error, e.frame) == (E, HEAD, "KeyError: 'sku'", "/app/x.py:3 in f")
+
+def test_traceback_after_a_gap_is_a_separate_event():
+    first, tb = run(seq([HEAD]) + seq(TB, start=2000))
+    assert first.frame is None
+    assert (tb.level, tb.msg, tb.error) == (E, TB[0], "KeyError: 'sku'")
+
+def test_traceback_header_raises_level_of_info_line():
+    (e,) = run(seq(["handling request", *TB]))
+    assert (e.level, e.msg) == (E, "handling request")
+
+@pytest.mark.parametrize("link", [
+    "During handling of the above exception, another exception occurred:",
+    "The above exception was the direct cause of the following exception:",
+])
+def test_chained_tracebacks_are_one_event(link):
+    tb2 = [TB[0], '  File "/app/y.py", line 9, in g', '    raise ValueError("bad")', "ValueError: bad"]
+    (e,) = run(seq([*TB, "", link, "", *tb2, ""]))
+    assert (e.level, e.msg, e.error, e.frame) == (E, TB[0], "ValueError: bad", "/app/y.py:9 in g")
+    assert e.extra[-1] == "ValueError: bad" and "" in e.extra  # trailing blank dropped, inner blanks kept
+
+def test_json_line_inside_traceback_is_its_own_event():
+    tb, js = run(seq([*TB[:2], '{"level":"info","msg":"x"}']))
+    assert (tb.error, tb.frame, tb.extra) == (None, "/app/x.py:3 in f", [TB[1]])
+    assert (js.msg, js.level, js.extra) == ("x", I, [])
+
+def test_blank_line_first_makes_no_event():
+    assert [e.msg for e in run(seq(["", "x"]))] == ["x"]
+    assert run(seq([""])) == []

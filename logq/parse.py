@@ -4,7 +4,7 @@ import re
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 LEVELS = {"debug": 10, "info": 20, "warn": 30, "error": 40, "fatal": 50}
 LEVEL_NAMES = {v: k.upper() for k, v in LEVELS.items()}
@@ -33,7 +33,8 @@ _LEVEL_WORD = re.compile(r"\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL
 _ERR = re.compile(r"\b[\w.]*(?:Error|Exception):")
 _WARN = re.compile(r"\b[\w.]*Warning:")
 _TB = "Traceback (most recent call last):"
-_CONTINUATION = ("Caused by:", "During handling of the above exception")
+_CONTINUATION = ("Caused by:", "During handling of the above exception", "The above exception was the direct cause")
+_TB_JOIN = timedelta(milliseconds=100)  # a traceback header this close to the previous line belongs to it
 _PY_FRAME = re.compile(r'File "(.+)", line (\d+), in (\S+)')
 _AT_FRAME = re.compile(r"\s+at (.+)")
 
@@ -134,9 +135,9 @@ def parse_payload(payload: str) -> dict:
 
 def _summary(lines: list[str]) -> str | None:
     """Error summary: the line ending the last Python traceback, else the first line if it looks like an error."""
-    for i in range(len(lines) - 1, -1, -1):
-        if lines[i].startswith(_TB):
-            return next((ln for ln in lines[i + 1:] if ln and not ln[0].isspace()), None)
+    tb = [i for i, ln in enumerate(lines) if ln.startswith(_TB)]
+    if tb and (end := next((ln for ln in lines[tb[-1] + 1:] if ln and not ln[0].isspace()), None)):
+        return end
     return lines[0] if _ERR.search(lines[0]) else None
 
 
@@ -149,6 +150,8 @@ def _frame(lines: list[str]) -> str | None:
 
 
 def _finish(ev: Event) -> Event:
+    while ev.extra and not ev.extra[-1]:  # blank lines join an event but do not belong to it at the end
+        ev.extra.pop()
     lines = [ev.msg, *ev.extra]
     ev.frame = _frame(lines)
     ev.error = ev.error or _summary(lines)
@@ -162,22 +165,30 @@ class Grouper:
         self.container, self.service, self.project, self.clock = container, service, project, clock
         self.last_feed: float | None = None
         self._cur: Event | None = None
+        self._last_ts: datetime | None = None  # Docker timestamp of the held event's last line
         self._in_tb = False  # between a traceback header and its summary line
 
     def feed(self, ts: datetime, payload: str) -> list[Event]:
         self.last_feed = self.clock()
         payload = _ANSI.sub("", payload)
+        cur = self._cur
+        if cur is None and not payload:  # a blank line has nothing to continue
+            return []
         indented = not payload or payload[0].isspace()  # a blank line continues the previous event too
-        if self._cur and (self._in_tb or indented or payload.startswith(_CONTINUATION)):
-            self._cur.extra.append(payload)
-            self._in_tb = self._in_tb and indented
+        tb_header = cur is not None and payload.startswith(_TB) and ts - self._last_ts <= _TB_JOIN
+        joins = self._in_tb or indented or tb_header or payload.startswith(_CONTINUATION)
+        if cur and joins and not payload.startswith("{"):  # a JSON line always starts its own event
+            cur.extra.append(payload)
+            cur.level = max(cur.level, _plain_level(payload))
+            self._last_ts = ts
+            self._in_tb = tb_header or (self._in_tb and indented)
             return []
         done = self.flush()
         f = parse_payload(payload)
         stack = f.pop("stack")
         f["service"] = f["service"] or self.service
         self._cur = Event(ts=ts, container=self.container, project=self.project, extra=stack, raw=payload, **f)
-        self._in_tb = payload.startswith(_TB)
+        self._last_ts, self._in_tb = ts, payload.startswith(_TB)
         return done
 
     def flush(self) -> list[Event]:
