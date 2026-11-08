@@ -52,6 +52,14 @@ def test_collapser_key_ignores_numbers_and_ids():
     assert col.offer(ev(msg="retry 1 of 5 id=7f3a9c21aa")) is True
     assert col.offer(ev(msg="retry 2 of 5 id=99bb00cc11")) is False
 
+def test_collapser_key_includes_http_fields():
+    col = Collapser(30, clock=lambda: 0.0)
+    assert col.offer(ev(msg="request finished", method="POST", route="/api/orders", status=500)) is True
+    assert col.offer(ev(msg="request finished", method="POST", route="/api/orders", status=200)) is True
+    assert col.offer(ev(msg="request finished", method="GET", route="/api/orders", status=500)) is True
+    assert col.offer(ev(msg="request finished", method="POST", route="/api/users", status=500)) is True
+    assert col.offer(ev(msg="request finished", method="POST", route="/api/orders", status=500)) is False
+
 def test_collapser_keeps_count_of_window_closed_before_due():
     now = [0.0]
     col = Collapser(30, clock=lambda: now[0])

@@ -23,8 +23,9 @@ class Query:
             raise ValueError(f"bad status filter {self.status!r}, use 500 or 5xx")
 
 
-def default_level(trace: str | None) -> int:
-    return 10 if trace else 30
+def default_level(*filters: str | None) -> int:
+    """`debug` when --trace or a field filter is given (they target request lines, which are INFO), else `warn`."""
+    return 10 if any(filters) else 30
 
 
 def parse_level(name: str) -> int:

@@ -166,6 +166,14 @@ def test_follow_unknown_service_exit_1(fake_docker, capsys):
     assert capsys.readouterr().err.splitlines() == ["unknown service: apii; services in p: api, web"]
 
 
+@pytest.mark.parametrize("flag", [["--status", "5xx"], ["--route", "/api"], ["--method", "POST"], ["--func", "create"]])
+def test_field_filter_without_level_reads_all_levels(fake_docker, capsys, flag):
+    assert main(["query", "-p", "p", *flag]) == 0
+    assert "level>=debug" in capsys.readouterr().out.splitlines()[-1]
+    assert main(["query", "-p", "p", *flag, "-l", "warn"]) == 0
+    assert "level>=warn" in capsys.readouterr().out.splitlines()[-1]
+
+
 def test_follow_reads_selected_services(fake_docker, monkeypatch):
     calls = []
     monkeypatch.setattr("signal.signal", lambda *a: None)

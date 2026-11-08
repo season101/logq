@@ -47,7 +47,7 @@ Log it when the response has been sent, with the message `request finished`:
  "http.request.method":"POST","http.route":"/api/orders","http.response.status_code":500,"duration_ms":812}
 ```
 
-logq's default level is `warn`, so INFO lines like this one do not show by default. Use `logq query --status 5xx -l info`, or `--trace <id>`, which defaults to `debug`.
+logq's default level is `warn`, but a field filter (`--status`, `--route`, `--method`, `--func`) or `--trace <id>` switches the default to `debug`, so `logq query --status 5xx` finds these INFO lines.
 
 ## Errors
 

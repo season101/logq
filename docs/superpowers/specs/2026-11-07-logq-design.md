@@ -87,7 +87,7 @@ Reads each selected container's logs for the window with `docker logs --timestam
 |---|---|---|
 | `-s/--service NAME` | compose service; repeatable | all services |
 | `-t/--trace ID` | trace or request ID; prefix match, at least 8 characters | none |
-| `-l/--level LEVEL` | minimum level: `debug`, `info`, `warn`, `error`, `fatal` | `warn`, or `debug` when `--trace` is given |
+| `-l/--level LEVEL` | minimum level: `debug`, `info`, `warn`, `error`, `fatal` | `warn`, or `debug` when `--trace`, `--route`, `--method`, `--status` or `--func` is given |
 | `--route TEXT` | substring of `http.route` | none |
 | `--method VERB` | `http.request.method` | none |
 | `--status CODE` | `500`, `5xx`, `4xx` | none |
@@ -97,7 +97,7 @@ Reads each selected container's logs for the window with `docker logs --timestam
 | `-n/--limit N` | maximum events printed | `50` |
 | `--full` | print whole stack traces and untruncated messages | off |
 
-`--trace` also matches plain-text lines containing the ID, so proxies that print request IDs in text (Traefik, nginx) are included. The field filters (`--route`, `--method`, `--status`, `--func`) exclude events that lack the field.
+`--trace` also matches plain-text lines containing the ID, so proxies that print request IDs in text (Traefik, nginx) are included. The field filters (`--route`, `--method`, `--status`, `--func`) exclude events that lack the field. Without `-l` they also lower the default level to `debug`, because the `request finished` lines they target are INFO.
 
 Output, one line per event:
 
@@ -123,7 +123,7 @@ Same selection, filters and defaults as `query`, but live:
 - Runs `docker logs -f --timestamps --tail 0` per container, one thread each, feeding one queue; the main loop prints and flushes each matching event.
 - Runs `docker events --format '{{json .}}' --filter type=container` (plus the project label filter) and prints container lifecycle events whatever the level filter: `die` with exit code, `oom`, `restart`, `start`, and `health_status` changes to or from `unhealthy`.
 - On `start` of a container in the project (for example after `docker compose up` recreates it), attaches a new log reader.
-- Repeats are collapsed: the first occurrence of an event key (container, level, error type or message with numbers and hex normalised) prints; later ones within 30 seconds are counted, and when the window closes logq prints `↻ api ERROR KeyError: 'sku' repeated 39x in 30s`.
+- Repeats are collapsed: the first occurrence of an event key (container, level, HTTP method, route and status, error type or message with numbers and hex normalised) prints; later ones within 30 seconds are counted, and when the window closes logq prints `↻ api ERROR KeyError: 'sku' repeated 39x in 30s` (request lines keep their method, route and status: `↻ api INFO POST /api/orders 500 request finished repeated 3x in 30s`).
 - Prints one start line, `-- following api, db, storage, web · level>=warn`, then runs until killed. Monitor's timeout ends it; the skill tells Claude to re-arm.
 
 ```

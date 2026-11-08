@@ -58,7 +58,7 @@ def _build_query(args) -> flt.Query:
     """Validate the filter flags; raises ValueError or re.error with a message fit for stderr."""
     if args.trace and len(args.trace) < 8:
         raise ValueError("--trace needs at least 8 characters")
-    level = flt.parse_level(args.level) if args.level else flt.default_level(args.trace)
+    level = flt.parse_level(args.level) if args.level else flt.default_level(args.trace, args.status, args.route, args.method, args.func)
     return flt.Query(args.service or [], args.trace, level, args.route, args.method, args.status, args.func,
                      re.compile(args.grep) if args.grep else None)
 

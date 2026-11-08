@@ -16,6 +16,14 @@ def test_default_level():
     assert default_level(None) == 30 and default_level("7f3a9c21") == 10
 
 
+def test_field_filters_default_to_all_levels():
+    assert default_level(None, None, None, None, None) == 30
+    for i in range(1, 5):  # --status, --route, --method, --func: request lines are INFO, so warn would hide them
+        args = [None] * 5
+        args[i] = "x"
+        assert default_level(*args) == 10
+
+
 def test_level_and_service():
     assert not matches(ev(level=20), Query())
     assert not matches(ev(), Query(services=["db"]))

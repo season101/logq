@@ -21,14 +21,14 @@ Containers that are exited, restarting or unhealthy start with `!`. `-p NAME` pi
 ```bash
 logq query -s api --since 10m            # warn and above (default level)
 logq query -s api -l info --since 5m     # include info lines
-logq query --status 5xx -l info          # 5xx `request finished` lines (INFO, so -l info)
+logq query --status 5xx                  # 5xx `request finished` lines (field filters read every level)
 logq query -g 'timeout|refused' -n 20    # regex on message and error text
 logq query --trace 7f3a9c21              # one request across all services
 ```
 
-- Default window 15m, `--limit` 50, level `warn` (`debug` when `--trace` is given).
+- Default window 15m, `--limit` 50, level `warn` (`debug` when `--trace` or a field filter is given).
 - Levels: `debug`, `info`, `warn`, `error`, `fatal`.
-- Other flags: `-s` (repeatable), `--until`, `--full` for whole stack traces. The field filters (`--route`, `--method`, `--status`, `--func`) drop events that lack the field. Request lines are INFO, so `--route`, `--method` and `--status` need `-l info`.
+- Other flags: `-s` (repeatable), `--until`, `--full` for whole stack traces. The field filters (`--route`, `--method`, `--status`, `--func`) drop events that lack the field, and without `-l` they read every level, because request lines are INFO.
 - `-s` narrows what is read and the footer. Container alerts (`! ... exited/unhealthy/restarting`) still cover the whole project. An unknown `-s` exits 1 and lists the services.
 - The footer says how many events matched and what was dropped. Read `level>=` in it before concluding nothing happened.
 - Exit codes: 0 ok (including no matches), 1 usage error or unknown project/service, 2 Docker unreachable.
@@ -52,7 +52,7 @@ Use the `Monitor` tool:
 
 Each stdout line is one notification, so keep the default `warn` level unless the user asks for more. `follow` prints a start line, then matching events plus container events (`died exit=N`, `oom`, `started`, `restarted`, `removed`, `health: unhealthy`, and `health: healthy` after unhealthy). Repeats collapse into `↻ ... repeated Nx in 30s`. After a restart it re-attaches and reads from the container's start time.
 
-Re-arm the Monitor when it expires if the user is still reproducing. Stop it with `TaskStop` when done. `follow` takes the same filters as `query`: `-s`, `-l`, `--route`, `-g`.
+Re-arm the Monitor when it expires if the user is still reproducing. Stop it with `TaskStop` when done. `follow` takes the same filters as `query`: `-s`, `-l`, `--route`, `-g`. A field filter without `-l` follows every level, so each matching request line is a notification; add `-l warn` to keep it quiet.
 
 ## 5. Traces in Jaeger
 

@@ -110,7 +110,8 @@ def format_docker_event(evt: dict, tz: tzinfo | None) -> str | None:
 
 
 def format_repeat(e: Event, count: int, window_s: int) -> str:
-    return redact(f"↻ {e.service} {LEVEL_NAMES[e.level]} {_cut(redact(e.error or e.msg))} repeated {count}x in {window_s}s")  # redact before the cut
+    head = " ".join([e.service, LEVEL_NAMES[e.level], *(str(x) for x in (e.method, e.route, e.status) if x is not None)])
+    return redact(f"↻ {head} {_cut(redact(e.error or e.msg))} repeated {count}x in {window_s}s")  # redact before the cut
 
 
 def footer(shown: int, matched: int, containers: list[str], window: str, level: int, trace: str | None, capped: list[str]) -> str:
