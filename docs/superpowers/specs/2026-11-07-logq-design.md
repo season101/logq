@@ -175,9 +175,9 @@ A multi-line error prints as one line: the error summary, the innermost stack fr
 
 Applied to every output line, including `--full`. There is no switch to turn it off. Matches become `[REDACTED]`:
 
-- `Bearer <token>` and `Authorization: <value>`
+- `Bearer <token>`, and the whole value of `Authorization`, `Cookie` and `Set-Cookie`, also when the key has a prefix (`HTTP_AUTHORIZATION`, `proxy_authorization`, `HTTP_COOKIE`) or the value sits in a list or map (`Authorization:[Basic …]`, `{"Authorization":["…"]}`)
 - JWTs (`eyJ` followed by three dot-separated base64url parts)
-- `password`, `passwd`, `secret`, `token`, `api_key`, `api-key` followed by `=` or `:` and a value, and JSON keys with those names
+- `password`, `passwd`, `secret`, `token`, `api_key`, `api-key`, and `pass`, `passphrase`, `pwd` as a whole name segment (`DB_PASS`, not `bypass`), with any `_`/`-` suffix (`SECRET_KEY_BASE`, `token_value`), followed by `=` or `:` and a value, and JSON keys with those names. Counters such as `token_count` redact too; over-redaction is the safe failure.
 - Credentials in URLs (`scheme://user:pass@host`)
 - Known key shapes: `AKIA[0-9A-Z]{16}`, `sk-…`, `ghp_…`, `github_pat_…`, `xox[bp]-…`
 

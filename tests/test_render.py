@@ -37,7 +37,7 @@ def test_redact(secret, text):
     ("db at postgres://app:pw123@db:5432/x up", "db at postgres://app:[REDACTED]@db:5432/x up"),
     ("Authorization: Bearer abc.def.ghi then", "Authorization: [REDACTED] then"),
     ("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnX3BhcnQ end", "jwt [REDACTED] end"),
-    ("token_count=5 secrets: 3 task-queue-processing-worker-1", "token_count=5 secrets: 3 task-queue-processing-worker-1"),
+    ("token_count=5 secrets: 3 task-queue-processing-worker-1", "token_count=[REDACTED] secrets: 3 task-queue-processing-worker-1"),
 ])
 def test_redact_keeps_surrounding_text(text, expected):
     assert redact(text) == expected
@@ -68,14 +68,47 @@ def test_redact_leak_probes(secret, text, expected):
     assert redact(redact(text)) == redact(text)
 
 def test_redact_does_not_touch_plain_urls_and_counters():
-    text = "GET http://host:8080/x?mail=a@b.com token_count=5 password_policy=strict"
+    text = "GET http://host:8080/x?mail=a@b.com bypass=1 compass: north"
     assert redact(text) == text
+    # a key with a suffix redacts too: over-redaction is the safe failure
+    assert redact("token_count=5 password_policy=strict") == "token_count=[REDACTED] password_policy=[REDACTED]"
+
+B64 = "dXNlcjpwYXNzd29yZA=="
+
+@pytest.mark.parametrize("text,expected", [
+    # Authorization in header dumps: value in a list or map, prefixed key names
+    (f"map[Accept:[*/*] Authorization:[Basic {B64}] X:[1]]", "map[Accept:[*/*] Authorization:[[REDACTED]] X:[1]]"),
+    (f'{{"Authorization":["Basic {B64}"]}}', '{"Authorization":["[REDACTED]"]}'),
+    (f"{{'Authorization': ['Basic {B64}']}}", "{'Authorization': ['[REDACTED]']}"),
+    (f"{{'HTTP_AUTHORIZATION': 'Basic {B64}', 'x': 1}}", "{'HTTP_AUTHORIZATION': '[REDACTED]', 'x': 1}"),
+    (f"proxy_authorization: Basic {B64} next", "proxy_authorization: [REDACTED] next"),
+    (f'{{"request_Authorization":"Basic {B64}"}}', '{"request_Authorization":"[REDACTED]"}'),
+    # cookies: the whole value
+    ("Cookie: sessionid=abc123; theme=dark next", "Cookie: [REDACTED] next"),
+    ("Set-Cookie: sessionid=abc123; Path=/; HttpOnly", "Set-Cookie: [REDACTED]"),
+    ("{'HTTP_COOKIE': 'sessionid=abc123; theme=dark'}", "{'HTTP_COOKIE': '[REDACTED]'}"),
+    ("map[Cookie:[sessionid=abc123; theme=dark]]", "map[Cookie:[[REDACTED]]]"),
+    # key names with a suffix, and short password names
+    ("SECRET_KEY_BASE=abc123", "SECRET_KEY_BASE=[REDACTED]"),
+    ("DB_PASS=abc123", "DB_PASS=[REDACTED]"),
+    ("MYSQL_PWD=abc123", "MYSQL_PWD=[REDACTED]"),
+    ("password_hash: abc123", "password_hash: [REDACTED]"),
+    ("api_key_2=abc123", "api_key_2=[REDACTED]"),
+    ('{"token_value": "abc123"}', '{"token_value": "[REDACTED]"}'),
+    ("passphrase=abc123", "passphrase=[REDACTED]"),
+    ("secret-key-base: abc123", "secret-key-base: [REDACTED]"),
+])
+def test_redact_header_dumps_cookies_and_suffixed_keys(text, expected):
+    assert redact(text) == expected
+    assert B64 not in redact(text) and "abc123" not in redact(text)
+    assert redact(redact(text)) == redact(text)
 
 def test_redact_unterminated_quote_and_long_lines():
     assert redact('{"password": "abc') == '{"password": "[REDACTED]"'
     start = time.perf_counter()
     for s in ("a" * 200_000, "eyJ" * 60_000, 'password="' + "\\" * 5_000, "http://" + "a:" * 30_000, "a://" * 50_000,
-              "Authorization: " + "a " * 100_000, "Authorization: X " + "k=v, " * 50_000, "authorization=" * 10_000):
+              "Authorization: " + "a " * 100_000, "Authorization: X " + "k=v, " * 50_000, "authorization=" * 10_000,
+              "token_" * 50_000, "DB_PASS_" * 30_000, "Cookie: a=b;" * 30_000, "Authorization:[" * 20_000):
         redact(s)
     assert time.perf_counter() - start < 2
 

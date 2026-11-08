@@ -8,12 +8,22 @@ from logq.parse import LEVEL_NAMES, Event
 MSG_LIMIT = 300
 READ_CAP = 50000  # keep equal to the default cap of docker.read_logs
 _B = r"(?<![A-Za-z0-9])"  # not in the middle of a word, so `task-queue-…` is not an sk- key
-_KEYS = r"(?:pass(?:word|wd)(?:\d+|[_-]?confirm(?:ation)?)?|secret(?:[_-]?(?:access[_-]?)?key)?|token|api[_-]?key)"
+# `pass`, `passphrase` and `pwd` only as a whole segment (`DB_PASS`, not `bypass`); the others anywhere (`csrftoken`).
+# Any `_`/`-` suffix counts (`SECRET_KEY_BASE`, `token_value`), so `token_count` redacts too: over-redaction is the safe failure.
+# shortcut: the suffix is capped at 64 characters (possessive, so no backtracking) to stay linear on long words, upgrade if
+# real key names are longer.
+_KEYS = (r"(?:(?:pass(?:word|wd)(?:\d+|[_-]?confirm(?:ation)?)?|secret(?:[_-]?(?:access[_-]?)?key)?|token|api[_-]?key)"
+         r"|(?<![A-Za-z])(?:pass(?:phrase)?|pwd))(?:[_-][\w-]{0,64}+)?")
 _QUOTED = r"""(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)?"""  # an unterminated quote runs to end of line
-_VAL = r"""(?:"[^"\n]*"|[^\s,"']+)"""
+_VAL = r"""(?:"[^"\n]*"|[^\s,"'\[\]]+)"""  # stops at `]`, the end of a Go header list
+# The separator, then an optional list or map opener (`Authorization:[Basic …]`, `{"Authorization":["…"]}`); an opener already
+# followed by the marker is not taken, so redacting twice changes nothing.
+_OPEN = r"""["']?[ \t]*[:=][ \t]*(?:[\[(](?!REDACTED\]))?"""
 # Authorization: an optional scheme word (any: Bearer, Token, ApiKey, AWS4-HMAC-SHA256, Digest, ...), then a token or key=value params
-# joined by commas (SigV4, Digest). A quoted value is redacted whole.
-_AUTH = re.compile(rf"""(?P<k>\bauthorization["']?[ \t]*[:=][ \t]*)(?:{_QUOTED}|(?:[A-Za-z][\w-]*[ \t]+)?(?:[\w.-]+=)?{_VAL}(?:,[ \t]*[\w.-]+={_VAL})*)""", re.I)
+# joined by commas (SigV4, Digest). A quoted value is redacted whole. A prefixed key counts (`HTTP_AUTHORIZATION`, `proxy_authorization`).
+_AUTH = re.compile(rf"""(?P<k>{_B}authorization{_OPEN})(?:{_QUOTED}|(?:[A-Za-z][\w-]*[ \t]+)?(?:[\w.-]+=)?{_VAL}(?:,[ \t]*[\w.-]+={_VAL})*)""", re.I)
+_PAIR = r"""[^\s;,"'\[\]]+"""
+_COOKIE = re.compile(rf"""(?P<k>{_B}(?:set-)?cookie{_OPEN})(?:{_QUOTED}|{_PAIR}(?:;[ \t]*{_PAIR})*)""", re.I)  # every pair
 # (pattern, replacement); order matters: Bearer before the generic key rule so `token: Bearer x` loses both words.
 _RULES = [(re.compile(p, f), r) for p, f, r in [
     (r"(\bbearer[ \t]+)[\w.~+/=-]+", re.I, r"\1[REDACTED]"),
@@ -35,7 +45,8 @@ def _keep_quotes(m: re.Match) -> str:
 
 
 def redact(text: str) -> str:
-    text = _AUTH.sub(_keep_quotes, text)
+    for rx in (_AUTH, _COOKIE):
+        text = rx.sub(_keep_quotes, text)
     for rx, repl in _RULES:
         text = rx.sub(repl, text)
     return _KV.sub(_keep_quotes, text)
