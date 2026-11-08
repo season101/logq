@@ -1,0 +1,131 @@
+import time
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+import pytest
+from logq.parse import Event
+from logq.docker import Container
+from logq.render import ago, redact, format_event, format_container_alert, format_docker_event, format_repeat, footer
+TZ, UTC = ZoneInfo("America/Chicago"), timezone.utc
+T = datetime(2026, 11, 8, 18, 4, 31, 220000, tzinfo=UTC)
+
+def ev(**kw):
+    return Event(**{**dict(ts=T, container="api-1", service="api", project="p", level=20, msg="m"), **kw})
+
+@pytest.mark.parametrize("secret,text", [
+    ("abc.def.ghi", "Authorization: Bearer abc.def.ghi"),
+    ("s3cr3tvalue", "token=s3cr3tvalue"),
+    ("hunter2", '{"password": "hunter2"}'),
+    ("pw123", "postgres://app:pw123@db:5432/x"),
+    ("AKIAABCDEFGHIJKLMNOP", "key AKIAABCDEFGHIJKLMNOP"),
+    ("sk-ABCDEFGHIJKLMNOPQRSTUV", "sk-ABCDEFGHIJKLMNOPQRSTUV"),
+    ("ghp_" + "a" * 36, "ghp_" + "a" * 36),
+    ("xoxb-123-456-abc", "slack xoxb-123-456-abc"),
+    ("github_pat_11ABCDEFG0123456789_abcdefghijklmnop", "github_pat_11ABCDEFG0123456789_abcdefghijklmnop"),
+    ("k3yvalue99", "api_key: k3yvalue99"),
+    ("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnX3BhcnQ", "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnX3BhcnQ"),
+])
+def test_redact(secret, text):
+    out = redact(text)
+    assert secret not in out and "[REDACTED]" in out
+
+@pytest.mark.parametrize("text,expected", [
+    ("token=s3cr3tvalue other", "token=[REDACTED] other"),
+    ("api_key: k3yvalue99 next", "api_key: [REDACTED] next"),
+    ('{"password": "hunter2", "user": "bob"}', '{"password": "[REDACTED]", "user": "bob"}'),
+    ("GET /cb?token=abc&page=2 ok", "GET /cb?token=[REDACTED]&page=2 ok"),
+    ('{"password": "pa\\"ss", "x": 1}', '{"password": "[REDACTED]", "x": 1}'),
+    ("db at postgres://app:pw123@db:5432/x up", "db at postgres://app:[REDACTED]@db:5432/x up"),
+    ("Authorization: Bearer abc.def.ghi then", "Authorization: [REDACTED] then"),
+    ("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnX3BhcnQ end", "jwt [REDACTED] end"),
+    ("token_count=5 secrets: 3 task-queue-processing-worker-1", "token_count=5 secrets: 3 task-queue-processing-worker-1"),
+])
+def test_redact_keeps_surrounding_text(text, expected):
+    assert redact(text) == expected
+    assert redact(redact(text)) == redact(text)
+
+def test_redact_unterminated_quote_and_long_lines():
+    assert redact('{"password": "abc') == '{"password": "[REDACTED]"'
+    start = time.perf_counter()
+    for s in ("a" * 200_000, "eyJ" * 60_000, 'password="' + "\\" * 5_000, "http://" + "a:" * 30_000):
+        redact(s)
+    assert time.perf_counter() - start < 2
+
+def test_redact_runs_on_every_returned_line():
+    e = ev(msg="login token=s3cr3tvalue", method="GET", route="/cb?secret=zzz", extra=["password=hunter2"])
+    out = format_event(e, TZ, full=True)
+    assert "s3cr3tvalue" not in out and "zzz" not in out and "hunter2" not in out and out.count("[REDACTED]") == 3
+
+def test_secret_is_redacted_before_truncation():
+    out = format_event(ev(msg="x" * 285 + " AKIAABCDEFGHIJKLMNOP"), TZ)
+    assert "AKIA" not in out
+
+def test_request_line():
+    e = ev(msg="request finished", method="POST", route="/api/orders", status=500, duration_ms=812, func="create_order", trace="7f3a9c21aabbccdd")
+    assert format_event(e, TZ) == "12:04:31.220 api    INFO  POST /api/orders 500 812ms create_order request finished trace=7f3a9c21"
+
+def test_folded_error_and_full():
+    e = ev(level=40, msg="Traceback (most recent call last):", error="KeyError: 'sku'", frame="orders/views.py:42 in create_order", extra=[f"l{i}" for i in range(14)], trace="7f3a9c21aabb")
+    assert format_event(e, TZ) == "12:04:31.220 api    ERROR KeyError: 'sku' at orders/views.py:42 in create_order (+14 lines) trace=7f3a9c21"
+    assert format_event(e, TZ, full=True).splitlines()[1:] == [f"l{i}" for i in range(14)]
+
+def test_full_keeps_blank_extra_lines_and_untruncated_msg():
+    out = format_event(ev(msg="x" * 400, extra=["a", "", "b"]), TZ, full=True)
+    assert out.split("\n")[1:] == ["a", "", "b"] and out.split("\n")[0].endswith("x" * 400)
+
+def test_msg_kept_beside_error_and_truncation():
+    assert "charge failed | ValueError: x" in format_event(ev(level=40, msg="charge failed", error="ValueError: x"), TZ)
+    body = format_event(ev(msg="x" * 400), TZ).split("INFO  ")[1]
+    assert len(body) == 300 and body.endswith("…")
+
+def test_msg_dropped_when_empty_or_equal_to_error():
+    assert format_event(ev(level=40, msg="", error="E: x"), TZ).endswith("ERROR E: x")
+    assert format_event(ev(level=40, msg="E: x", error="E: x"), TZ).endswith("ERROR E: x")
+    assert format_event(ev(msg=""), TZ) == "12:04:31.220 api    INFO"
+
+def test_footer_variants():
+    assert footer(3, 3, ["api", "worker", "db", "web"], "15m", 10, "7f3a9c21aabb", []) == \
+        "-- 3 of 3 matches · 4 containers (api, worker, db, web) · 15m · level>=debug · trace=7f3a9c21"
+    assert footer(0, 0, ["api", "db"], "15m", 30, None, []) == "-- no matches · 2 containers (api, db) · 15m · level>=warn"
+    assert footer(50, 212, ["api"], "15m", 30, None, ["api-1"]) == \
+        "-- 50 of 212 matches (oldest dropped) · 1 container (api) · 15m · level>=warn · capped at 50000 lines: api-1"
+    assert "9 containers ·" in footer(0, 0, [f"s{i}" for i in range(9)], "15m", 30, None, [])
+    assert "(s0" not in footer(0, 0, [f"s{i}" for i in range(9)], "15m", 30, None, [])
+    assert "8 containers (s0," in footer(0, 0, [f"s{i}" for i in range(8)], "15m", 30, None, [])
+
+def test_ago():
+    assert [ago(timedelta(seconds=s)) for s in (45, 479, 3 * 3600 + 59, 2 * 86400 + 5, -9)] == ["45s", "7m", "3h", "2d", "0s"]
+
+def test_container_alert():
+    now = datetime(2026, 11, 8, 2, 20, 0, tzinfo=UTC)
+    exited = Container("i", "web-1", "p", "web", None, "exited", None, 137, 0, None, now - timedelta(minutes=2))
+    assert format_container_alert(exited, now) == "! web-1 exited(137) 2m ago"
+    assert format_container_alert(Container("i", "db-1", "p", "db", None, "running", "unhealthy", 0, 0, now, None), now) == "! db-1 unhealthy"
+    assert format_container_alert(Container("i", "db-1", "p", "db", None, "running", "healthy", 0, 0, now, None), now) is None
+
+def test_container_alert_other_states():
+    now = datetime(2026, 11, 8, 2, 20, 0, tzinfo=UTC)
+    def c(state, **kw):
+        return Container(**{**dict(id="i", name="web-1", project="p", service="web", working_dir=None, state=state, health=None, exit_code=0, restarts=0, started_at=None, finished_at=None), **kw})
+    assert format_container_alert(c("exited", exit_code=1), now) == "! web-1 exited(1)"
+    assert format_container_alert(c("restarting"), now) == "! web-1 restarting"
+    assert format_container_alert(c("dead"), now) == "! web-1 dead"
+    assert format_container_alert(c("created"), now) is None
+    assert format_container_alert(c("exited", health="unhealthy", finished_at=now), now) == "! web-1 exited(0) 0s ago"
+
+def test_docker_events():
+    base = {"timeNano": 1762625402114000000, "Actor": {"Attributes": {"com.docker.compose.service": "api", "name": "p-api-1", "exitCode": "137"}}}
+    assert format_docker_event({**base, "Action": "die"}, UTC).endswith("! api died exit=137")
+    assert format_docker_event({**base, "Action": "oom"}, UTC).endswith("! api oom")
+    assert format_docker_event({**base, "Action": "health_status: unhealthy"}, UTC).endswith("! api health: unhealthy")
+    assert format_docker_event({**base, "Action": "destroy"}, UTC).endswith("! api removed")
+    assert format_docker_event({**base, "Action": "exec_start: sh"}, UTC) is None
+
+def test_docker_event_time_actions_and_name_fallback():
+    evt = {"timeNano": 1762625402114000000, "Action": "start", "Actor": {"Attributes": {"name": "p-api-1"}}}
+    assert format_docker_event(evt, UTC) == "18:10:02.114 ! p-api-1 started"
+    assert format_docker_event({**evt, "Action": "restart"}, UTC).endswith("! p-api-1 restarted")
+    assert format_docker_event(evt, TZ).startswith("12:10:02.114 ")
+
+def test_repeat_line():
+    assert format_repeat(ev(level=40, error="KeyError: 'sku'"), 39, 30) == "↻ api ERROR KeyError: 'sku' repeated 39x in 30s"
+    assert format_repeat(ev(level=30, msg="retry token=abc1"), 3, 30) == "↻ api WARN retry token=[REDACTED] repeated 3x in 30s"
