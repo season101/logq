@@ -45,3 +45,15 @@ def test_follow_logs_args(monkeypatch):
     follow_logs(c("api-1", "p", "/w/p"), since=datetime(2026, 11, 8, 12, 0, 0, 123456, tzinfo=ZoneInfo("America/Chicago")))
     assert argv == [["docker", "logs", "-f", "--timestamps", "--tail", "0", "api-1"],
                     ["docker", "logs", "-f", "--timestamps", "--since", "2026-11-08T18:00:00.123456Z", "api-1"]]
+
+
+def at(name, project, state, started_h):
+    return Container(name, name, project, name, "/w/t", state, None, 0, 0, datetime(2026, 11, 8, started_h, tzinfo=timezone.utc), None)
+
+def test_shared_working_dir_prefers_running_then_newest(capsys):
+    old, verify, walk = at("old-1", "old", "running", 1), at("verify-1", "verify", "exited", 9), at("walk-1", "walk", "running", 5)
+    assert select_project([old, verify, walk], None, Path("/w/t"))[0] == "walk"
+    assert capsys.readouterr().err == "logq: also in this folder: old, verify; use -p to pick\n"
+    assert select_project([verify, old], None, Path("/w/t"))[0] == "old"
+    select_project([old], None, Path("/w/t"))
+    assert capsys.readouterr().err == "logq: also in this folder: verify; use -p to pick\n"  # a lone project adds no note

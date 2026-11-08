@@ -70,12 +70,10 @@ def _cut(body: str) -> str:
 
 
 def format_event(e: Event, tz: tzinfo | None, full: bool = False) -> str:
-    if e.error:
-        body = e.error + (f" at {e.frame}" if e.frame else "") + (f" (+{len(e.extra)} lines)" if e.extra and not full else "")
-        if e.msg and e.msg != e.error and not e.msg.startswith("Traceback"):
-            body = f"{e.msg} | {body}"
-    else:
-        body = e.msg
+    body = e.error or e.msg
+    if e.error and e.msg and e.msg != e.error and not e.msg.startswith("Traceback"):
+        body = f"{e.msg} | {e.error}"
+    body += (f" at {e.frame}" if e.frame else "") + (f" (+{len(e.extra)} lines)" if e.extra and not full else "")  # error or not
     body = redact(body)  # before cutting, so a secret split by the cut cannot slip through
     if not full:
         body = _cut(body)
@@ -114,12 +112,14 @@ def format_repeat(e: Event, count: int, seconds: float) -> str:
     return redact(f"↻ {head} {_cut(redact(e.error or e.msg))} repeated {count}x in {round(seconds)}s")  # redact before the cut
 
 
-def footer(shown: int, matched: int, containers: list[str], window: str, level: int, trace: str | None, capped: list[str]) -> str:
+def footer(shown: int, matched: int, containers: list[str], window: str, level: int, trace: str | None, capped: list[str],
+           project: str | None = None) -> str:
     n = len(containers)
     names = f" ({', '.join(containers)})" if 0 < n <= 8 else ""
     parts = [
         "no matches" if not matched else f"{shown} of {matched} matches" + (" (oldest dropped)" if shown < matched else ""),
         f"{n} container{'s' * (n != 1)}{names}",
+        *([f"project {project}"] if project else []),
         window,
         f"level>={LEVEL_NAMES[level].lower()}",
     ]

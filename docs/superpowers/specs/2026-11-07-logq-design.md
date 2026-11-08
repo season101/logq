@@ -65,7 +65,7 @@ logq/
 ### 4.1 Project selection (all commands)
 
 - `-p/--project NAME` selects a compose project. `-p all` selects every container on the daemon.
-- Without `-p`, logq picks the project whose `com.docker.compose.project.working_dir` label equals the current directory or one of its parents.
+- Without `-p`, logq picks the project whose `com.docker.compose.project.working_dir` label equals the current directory or one of its parents (the deepest). When several projects share that folder, it prefers one with a running container, then the most recently started, and prints `logq: also in this folder: <others>; use -p to pick` to stderr. The `query` footer and the `follow` start line name the project.
 - If no project matches, logq exits 1 and prints the running projects (same as `logq ps`).
 - Containers without compose labels belong to a pseudo-project named after the container.
 
@@ -97,7 +97,7 @@ Reads each selected container's logs for the window with `docker logs --timestam
 | `-n/--limit N` | maximum events printed | `50` |
 | `--full` | print whole stack traces and untruncated messages | off |
 
-`--trace` also matches plain-text lines containing the ID, so proxies that print request IDs in text (Traefik, nginx) are included. The field filters (`--route`, `--method`, `--status`, `--func`) exclude events that lack the field. Without `-l` they also lower the default level to `debug`, because the `request finished` lines they target are INFO.
+`--trace` matches events whose trace field starts with the ID, and any line whose raw text contains it (case-insensitive), so an ID in another alias field (`request_id` beside `trace_id`) and proxies that print request IDs in text (Traefik, nginx) are included. The field filters (`--route`, `--method`, `--status`, `--func`) exclude events that lack the field. Without `-l` they also lower the default level to `debug`, because the `request finished` lines they target are INFO.
 
 Output, one line per event:
 
@@ -106,13 +106,13 @@ Output, one line per event:
 12:04:31.180 worker WARN  retrying charge attempt=2 trace=7f3a9c21
 12:04:31.214 api    ERROR KeyError: 'sku' at orders/views.py:42 in create_order (+14 lines) trace=7f3a9c21
 12:04:31.220 api    INFO  POST /api/orders 500 812ms create_order request finished trace=7f3a9c21
--- 3 of 3 matches · 4 containers (api, worker, db, web) · 15m · level>=debug · trace=7f3a9c21
+-- 3 of 3 matches · 4 containers (api, worker, db, web) · project para-dashboard-app-v01 · 15m · level>=debug · trace=7f3a9c21
 ```
 
 - Times are local (America/Chicago), from Docker's timestamps, which are reliable even when the app's own clock or format is not.
 - Trace IDs are shown as the first 8 characters.
 - Messages are cut to 300 characters unless `--full`.
-- The footer always prints. With no matches it reads `-- no matches · 4 containers (…) · 15m · level>=warn`.
+- The footer always prints and names the project right after the containers. With no matches it reads `-- no matches · 4 containers (…) · project <name> · 15m · level>=warn`.
 - When more events matched than `--limit`, the footer says `50 of 212 matches (oldest dropped)`.
 - Reading is capped at 50,000 lines per container; the footer notes when a cap was hit.
 
@@ -123,8 +123,8 @@ Same selection, filters and defaults as `query`, but live:
 - Runs `docker logs -f --timestamps --tail 0` per container, one thread each, feeding one queue; the main loop prints and flushes each matching event.
 - Runs `docker events --format '{{json .}}' --filter type=container` (plus the project label filter) and prints container lifecycle events whatever the level filter: `die` with exit code, `oom`, `restart`, `start`, and `health_status` changes to or from `unhealthy`.
 - On `start` of a container in the project (for example after `docker compose up` recreates it), attaches a new log reader.
-- Repeats are collapsed: the first occurrence of an event key (container, level, HTTP method, route and status, error type or message with numbers and hex normalised) prints; later ones within 30 seconds are counted, and when the window closes logq prints `↻ api ERROR KeyError: 'sku' repeated 39x in 30s` (request lines keep their method, route and status: `↻ api INFO POST /api/orders 500 request finished repeated 3x in 30s`).
-- Prints one start line, `-- following api, db, storage, web · level>=warn`, then runs until killed. Monitor's timeout ends it (SIGTERM; Ctrl-C works the same): logq stops its `docker` children, prints the open repeat windows with the seconds they covered (`repeated 3x in 7s`) and exits 0. The skill tells Claude to re-arm.
+- Repeats are collapsed: the first occurrence of an event key (container, level, HTTP method, route and status, error type or message with UUIDs, numbers and hex normalised) prints; later ones within 30 seconds are counted, and when the window closes logq prints `↻ api ERROR KeyError: 'sku' repeated 39x in 30s` (request lines keep their method, route and status: `↻ api INFO POST /api/orders 500 request finished repeated 3x in 30s`).
+- Prints one start line, `-- following api, db, storage, web · project para-dashboard-app-v01 · level>=warn`, then runs until killed. Monitor's timeout ends it (SIGTERM; Ctrl-C works the same): logq stops its `docker` children, prints the open repeat windows with the seconds they covered (`repeated 3x in 7s`) and exits 0. The skill tells Claude to re-arm.
 - Docker failures are printed, not swallowed: when a log stream ends with Docker error text while its container still runs, `! <container>: <error line>`; when the `docker events` stream ends, `! docker events ended: <last error line, or "stream closed">`, and `follow` exits 2 once it stops.
 
 ```
@@ -150,7 +150,7 @@ A payload starting with `{` that parses as an object is flattened (nested keys j
 |---|---|
 | level | `severity_text`, `level`, `levelname`, `log.level`, `severity`; pino numbers 10/20/30/40/50/60 → debug/debug/info/warn/error/fatal |
 | message | `body`, `message`, `msg`, `event` |
-| trace | `trace_id`, `otelTraceID`, `traceId`, `trace.id`, `request_id`, `requestId`, `correlation_id` |
+| trace | `trace_id`, `otelTraceID`, `traceId`, `trace.id`, `request_id`, `requestId`, `correlation_id`; an all-zero value (`"0"`, `0000…`) counts as absent, so the next key is used (same for span) |
 | span | `span_id`, `otelSpanID`, `spanId`, `span.id` |
 | service | `service.name`, `service`; falls back to the compose service label |
 | method | `http.request.method`, `method`, `req.method` |
@@ -158,7 +158,7 @@ A payload starting with `{` that parses as an object is flattened (nested keys j
 | status | `http.response.status_code`, `status_code`, `status`, `res.statusCode` |
 | duration | `duration_ms`, `duration`, `responseTime`, `elapsed_ms` |
 | function | `code.function`, `funcName`, `function` |
-| error | `exception.type` + `exception.message` + `exception.stacktrace`, `err.type` + `err.message` + `err.stack`, `exc_info`, `error` |
+| error | `exception.type` + `exception.message` + `exception.stacktrace`, `err.type` + `err.message` + `err.stack`, `exc_info`, `error`; without a type, the stack's first line when it looks like an error (`TypeError: bad`) |
 
 Level words are matched case-insensitively (`WARNING`, `warn`, `Warn` → warn; `CRITICAL` → fatal).
 
@@ -170,7 +170,7 @@ Level words are matched case-insensitively (`WARNING`, `warn`, `Warn` → warn; 
 
 ### 5.3 Folding
 
-A multi-line error prints as one line: the error summary, the innermost stack frame (the last `File "…", line N, in f` for Python, the first `at …` for JS and Java), and `(+N lines)`. `--full` prints the whole block.
+A multi-line error prints as one line: the error summary, the innermost stack frame (the last `File "…", line N, in f` for Python, the first `at …` for JS and Java), and `(+N lines)`. Any multi-line event shows its frame and `(+N lines)`, error or not, and the last Java `Caused by:` line is the error summary when nothing else is. `--full` prints the whole block.
 
 ## 6. Redaction
 

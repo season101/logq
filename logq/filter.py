@@ -40,8 +40,8 @@ def matches(e: Event, q: Query) -> bool:
         return False
     if q.trace:
         t = q.trace.lower()
-        # JSON events carry the ID in `trace`; plain-text lines (Traefik, nginx) only in the raw text
-        if not (e.trace.lower().startswith(t) if e.trace else t in e.raw.lower()):
+        # `trace` holds the first alias found; the ID may also sit in another alias field or in plain text (Traefik, nginx)
+        if not ((e.trace and e.trace.lower().startswith(t)) or t in e.raw.lower()):
             return False
     if q.route and not (e.route and q.route in e.route):
         return False

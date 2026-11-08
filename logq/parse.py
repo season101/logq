@@ -27,6 +27,8 @@ _ALIASES = {
     "func": ("code.function", "funcName", "function"),
 }
 _CAST = {"status": int, "duration_ms": float}  # everything else is str
+_ID_KEYS = {*_ALIASES["trace"], *_ALIASES["span"]}
+_NO_ID = re.compile(r"[0-]+")  # OTel's log correlation writes "0" outside a span; all-zero IDs are not IDs
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _LEVEL_WORD = re.compile(r"\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL|PANIC)\b")
@@ -123,22 +125,29 @@ def parse_payload(payload: str) -> dict:
         text = _ANSI.sub("", payload)
         return {"level": _plain_level(text), "msg": text, "error": None, "stack": [],
                 **dict.fromkeys(_ALIASES)}
+    flat = {k: v for k, v in flat.items() if not (k in _ID_KEYS and _NO_ID.fullmatch(str(v)))}  # so the next alias is used
     stack = _first(flat, _STACK_KEYS)
+    stack = stack.splitlines() if isinstance(stack, str) else []
+    typed = any(flat.get(f"{p}.type") is not None for p in ("exception", "err"))
     return {
         "level": _level(_first(flat, _LEVEL_KEYS)),
         "msg": _cast(_first(flat, _MSG_KEYS), str) or "",
-        "error": _error(flat),
-        "stack": stack.splitlines() if isinstance(stack, str) else [],
+        # an untyped stack (pino's bare err.stack) names the error on its first line: `TypeError: bad`
+        "error": stack[0] if stack and not typed and _ERR.search(stack[0]) else _error(flat),
+        "stack": stack,
         **{f: _cast(_first(flat, keys), _CAST.get(f, str)) for f, keys in _ALIASES.items()},
     }
 
 
 def _summary(lines: list[str]) -> str | None:
-    """Error summary: the line ending the last Python traceback, else the first line if it looks like an error."""
+    """Error summary: the line ending the last Python traceback, else the first line if it looks like an error, else the
+    last Java `Caused by:`."""
     tb = [i for i, ln in enumerate(lines) if ln.startswith(_TB)]
     if tb and (end := next((ln for ln in lines[tb[-1] + 1:] if ln and not ln[0].isspace()), None)):
         return end
-    return lines[0] if _ERR.search(lines[0]) else None
+    if _ERR.search(lines[0]):
+        return lines[0]
+    return next((ln.removeprefix("Caused by:").strip() for ln in reversed(lines) if ln.startswith("Caused by:")), None)
 
 
 def _frame(lines: list[str]) -> str | None:

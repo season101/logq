@@ -208,3 +208,18 @@ def test_repeat_line_prints_rounded_seconds():
 def test_repeat_line_names_the_request():
     e = ev(msg="request finished", method="POST", route="/api/orders", status=500, duration_ms=812, func="create_order")
     assert format_repeat(e, 3, 30) == "↻ api INFO POST /api/orders 500 request finished repeated 3x in 30s"
+
+def test_multi_line_context_shows_without_an_error():
+    e = ev(msg="handling request", frame="app/x.py:3 in f", extra=["a", "b"])
+    assert format_event(e, TZ).endswith("INFO  handling request at app/x.py:3 in f (+2 lines)")
+    assert format_event(ev(msg="warned", extra=["  detail"]), TZ).endswith("INFO  warned (+1 lines)")
+
+def test_java_cause_is_shown():
+    from pathlib import Path
+    from logq.parse import parse_stream
+    java = parse_stream((Path(__file__).parent / "fixtures/stacks.log").read_text().splitlines(), "api-1", "api", "p")[1]
+    assert format_event(java, TZ).split("ERROR ", 1)[1] == \
+        "ERROR request failed | java.io.IOException: reset at com.acme.Orders.create(Orders.java:88) (+2 lines)"
+
+def test_footer_names_the_project_after_the_containers():
+    assert footer(3, 3, ["api"], "15m", 30, None, [], project="p") == "-- 3 of 3 matches · 1 container (api) · project p · 15m · level>=warn"

@@ -82,6 +82,11 @@ def test_collapser_key_ignores_numbers_and_ids():
     assert col.offer(ev(msg="retry 1 of 5 id=7f3a9c21aa")) is True
     assert col.offer(ev(msg="retry 2 of 5 id=99bb00cc11")) is False
 
+def test_collapser_key_ignores_uuids():
+    col = Collapser(30, clock=lambda: 0.0)
+    assert col.offer(ev(msg="job 550e8400-e29b-41d4-a716-446655440000 failed")) is True
+    assert col.offer(ev(msg="job 6ba7b810-9dad-11d1-80b4-00c04fd430c8 failed")) is False
+
 def test_collapser_key_includes_http_fields():
     col = Collapser(30, clock=lambda: 0.0)
     assert col.offer(ev(msg="request finished", method="POST", route="/api/orders", status=500)) is True
@@ -113,7 +118,7 @@ def test_run_follow_with_fake_sources():
     run_follow("p", [API], Query(), UTC, out=out,
                open_logs=lambda c, since=None: FakeProc(logs[c.name]), open_events=lambda p, pseudo: FakeProc(evts))
     text = out.getvalue()
-    assert text.splitlines()[0] == "-- following api · level>=warn"
+    assert text.splitlines()[0] == "-- following api · project p · level>=warn"
     assert "ERROR boom" in text and "! api died exit=1" in text and "INFO ok" not in text
 
 def test_run_follow_attaches_recreated_container(monkeypatch):

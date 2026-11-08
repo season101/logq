@@ -16,7 +16,7 @@ from logq.parse import LEVEL_NAMES, Event, Grouper, split_docker_line
 from logq.render import format_docker_event, format_event, format_repeat, redact
 
 REPEAT_S = 30
-_NUMS = re.compile(r"0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|\d+")
+_NUMS = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}|0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|\d+")  # UUIDs first
 
 
 class Collapser:
@@ -153,7 +153,7 @@ def run_follow(project: str, containers: list[Container], q: Query, tz: tzinfo |
         print(text, file=out, flush=True)
 
     services = ", ".join(sorted({c.service for c in containers}))
-    say(redact(f"-- following {services} · level>={LEVEL_NAMES[q.level].lower()}"))
+    say(redact(f"-- following {services} · project {project} · level>={LEVEL_NAMES[q.level].lower()}"))
     col = Collapser(REPEAT_S, clock)
     try:
         for c in containers:

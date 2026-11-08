@@ -70,3 +70,9 @@ def test_status_class_is_case_insensitive_and_bad_values_raise():
     for bad in ("5x", "abc", "50", "6xxx"):
         with pytest.raises(ValueError):
             Query(status=bad)
+
+
+def test_trace_matches_an_id_in_another_alias_field():
+    raw = '{"trace_id":"aaaa1111bbbb2222","request_id":"7F3A9C21dd"}'
+    assert matches(ev(trace="aaaa1111bbbb2222", raw=raw), Query(trace="7f3a9c21", level=10))
+    assert not matches(ev(trace="aaaa1111bbbb2222", raw=raw), Query(trace="99999999", level=10))

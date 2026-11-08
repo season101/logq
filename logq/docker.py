@@ -2,6 +2,7 @@
 import json
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from logq.parse import split_docker_line
 
 _PROJECT, _SERVICE, _WORKDIR = (f"com.docker.compose.{k}" for k in ("project", "service", "project.working_dir"))
 _RELATIVE = re.compile(r"\d+[smh]")
+_EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 _POPEN = dict(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1)
 
 
@@ -108,7 +110,12 @@ def select_project(containers: list[Container], project: str | None, cwd: Path) 
         # the project whose working_dir is cwd or a parent of it, deepest first
         near = [c for c in containers if c.working_dir and Path(c.working_dir) in (cwd, *cwd.parents)]
         if near:
-            project = max(near, key=lambda c: len(Path(c.working_dir).parts)).project
+            deepest = max(len(Path(c.working_dir).parts) for c in near)
+            here = [c for c in near if len(Path(c.working_dir).parts) == deepest]
+            # projects can share a folder: prefer one with a running container, then the most recently started
+            project = max(here, key=lambda c: (c.state == "running", c.started_at or _EPOCH)).project
+            if others := sorted({c.project for c in here} - {project}):
+                print(f"logq: also in this folder: {', '.join(others)}; use -p to pick", file=sys.stderr)
     chosen = [c for c in containers if c.project == project]
     if not chosen:
         raise UnknownProject(sorted({c.project for c in containers}))

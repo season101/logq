@@ -78,6 +78,7 @@ def test_js_and_java_frames():
     js, java = events("stacks.log")
     assert (js.level, js.error, js.frame) == (E, "Error: boom", "handler (/app/src/api.js:10:5)")
     assert java.frame == "com.acme.Orders.create(Orders.java:88)" and len(java.extra) == 2
+    assert java.error == "java.io.IOException: reset"  # the last `Caused by:` when nothing else names the error
 
 def test_json_stack_gets_frame():
     line = '2026-11-08T02:20:07.0Z {"level":"error","message":"x","exc_info":"Traceback (most recent call last):\\n  File \\"a.py\\", line 1, in f\\nKeyError: 1"}'
@@ -158,3 +159,22 @@ def test_json_line_inside_traceback_is_its_own_event():
 def test_blank_line_first_makes_no_event():
     assert [e.msg for e in run(seq(["", "x"]))] == ["x"]
     assert run(seq([""])) == []
+
+@pytest.mark.parametrize("err", ['{"stack":"TypeError: bad\\n    at f (/a.js:1:1)"}',
+                                 '{"message":"bad","stack":"TypeError: bad\\n    at f (/a.js:1:1)"}'])
+def test_untyped_json_stack_names_the_error(err):
+    (e,) = run([line(0, '{"level":"error","msg":"x","err":%s}' % err)])
+    assert (e.error, e.frame) == ("TypeError: bad", "f (/a.js:1:1)")
+
+def test_typed_json_error_wins_over_stack():
+    (e,) = run([line(0, '{"level":"error","msg":"x","err":{"type":"E","message":"m","stack":"TypeError: bad\\n  at f"}}')])
+    assert e.error == "E: m"
+
+@pytest.mark.parametrize("p, trace, span", [
+    ('{"msg":"m","otelTraceID":"0","otelSpanID":"0"}', None, None),
+    ('{"msg":"m","trace_id":"00000000000000000000000000000000","request_id":"r1","span_id":"0000000000000000"}', "r1", None),
+    ('{"msg":"m","trace_id":0}', None, None),
+])
+def test_all_zero_ids_are_absent(p, trace, span):
+    f = parse_payload(p)
+    assert (f["trace"], f["span"]) == (trace, span)
