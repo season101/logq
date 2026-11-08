@@ -1,5 +1,8 @@
-"""Docker log line -> Event fields. JSON payloads are mapped through spec section 5.1."""
+"""Docker log line -> Event. JSON payloads follow spec section 5.1, plain text and grouping section 5.2."""
 import json
+import re
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -24,6 +27,15 @@ _ALIASES = {
     "func": ("code.function", "funcName", "function"),
 }
 _CAST = {"status": int, "duration_ms": float}  # everything else is str
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_LEVEL_WORD = re.compile(r"\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL|PANIC)\b")
+_ERR = re.compile(r"\b[\w.]*(?:Error|Exception):")
+_WARN = re.compile(r"\b[\w.]*Warning:")
+_TB = "Traceback (most recent call last):"
+_CONTINUATION = ("Caused by:", "During handling of the above exception")
+_PY_FRAME = re.compile(r'File "(.+)", line (\d+), in (\S+)')
+_AT_FRAME = re.compile(r"\s+at (.+)")
 
 
 @dataclass
@@ -84,6 +96,14 @@ def _level(v) -> int:
     return LEVELS["info"]
 
 
+def _plain_level(s: str) -> int:
+    if m := _LEVEL_WORD.search(s):
+        return _WORDS[m[1].lower()]
+    if s.startswith(_TB) or _ERR.search(s):
+        return LEVELS["error"]
+    return LEVELS["warn"] if _WARN.search(s) else LEVELS["info"]
+
+
 def _error(flat: dict) -> str | None:
     for p in ("exception", "err"):
         parts = [str(flat[k]) for k in (f"{p}.type", f"{p}.message") if flat.get(k) is not None]
@@ -99,7 +119,8 @@ def parse_payload(payload: str) -> dict:
     except (ValueError, RecursionError):
         flat = None
     if flat is None:
-        return {"level": LEVELS["info"], "msg": payload, "error": None, "stack": [],
+        text = _ANSI.sub("", payload)
+        return {"level": _plain_level(text), "msg": text, "error": None, "stack": [],
                 **dict.fromkeys(_ALIASES)}
     stack = _first(flat, _STACK_KEYS)
     return {
@@ -109,3 +130,67 @@ def parse_payload(payload: str) -> dict:
         "stack": stack.splitlines() if isinstance(stack, str) else [],
         **{f: _cast(_first(flat, keys), _CAST.get(f, str)) for f, keys in _ALIASES.items()},
     }
+
+
+def _summary(lines: list[str]) -> str | None:
+    """Error summary: the line ending the last Python traceback, else the first line if it looks like an error."""
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].startswith(_TB):
+            return next((ln for ln in lines[i + 1:] if ln and not ln[0].isspace()), None)
+    return lines[0] if _ERR.search(lines[0]) else None
+
+
+def _frame(lines: list[str]) -> str | None:
+    """Innermost frame: the last Python `File` line, else the first JS/Java `at ...` line."""
+    py = [m for ln in lines if (m := _PY_FRAME.search(ln))]
+    if py:
+        return f"{py[-1][1]}:{py[-1][2]} in {py[-1][3]}"
+    return next((m[1].strip() for ln in lines if (m := _AT_FRAME.match(ln))), None)
+
+
+def _finish(ev: Event) -> Event:
+    lines = [ev.msg, *ev.extra]
+    ev.frame = _frame(lines)
+    ev.error = ev.error or _summary(lines)
+    return ev
+
+
+class Grouper:
+    """Folds the lines of one container into Events (spec 5.2). An event is held until a line starts the next one."""
+
+    def __init__(self, container: str, service: str, project: str, clock: Callable[[], float] = time.monotonic):
+        self.container, self.service, self.project, self.clock = container, service, project, clock
+        self.last_feed: float | None = None
+        self._cur: Event | None = None
+        self._in_tb = False  # between a traceback header and its summary line
+
+    def feed(self, ts: datetime, payload: str) -> list[Event]:
+        self.last_feed = self.clock()
+        payload = _ANSI.sub("", payload)
+        indented = not payload or payload[0].isspace()  # a blank line continues the previous event too
+        if self._cur and (self._in_tb or indented or payload.startswith(_CONTINUATION)):
+            self._cur.extra.append(payload)
+            self._in_tb = self._in_tb and indented
+            return []
+        done = self.flush()
+        f = parse_payload(payload)
+        stack = f.pop("stack")
+        f["service"] = f["service"] or self.service
+        self._cur = Event(ts=ts, container=self.container, project=self.project, extra=stack, raw=payload, **f)
+        self._in_tb = payload.startswith(_TB)
+        return done
+
+    def flush(self) -> list[Event]:
+        ev, self._cur, self._in_tb = self._cur, None, False
+        return [_finish(ev)] if ev else []
+
+
+def parse_stream(lines: Iterable[str], container: str, service: str, project: str) -> list[Event]:
+    g, events = Grouper(container, service, project), []
+    for line in lines:
+        try:
+            ts, payload = split_docker_line(line.rstrip("\r\n"))
+        except ValueError:
+            continue
+        events += g.feed(ts, payload)
+    return events + g.flush()

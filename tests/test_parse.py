@@ -1,6 +1,10 @@
 from datetime import datetime, timezone
+from pathlib import Path
 import pytest
-from logq.parse import LEVELS, split_docker_line, parse_payload
+from logq.parse import LEVELS, Grouper, parse_payload, parse_stream, split_docker_line
+
+FIX = Path(__file__).parent / "fixtures"
+I, W, E = LEVELS["info"], LEVELS["warn"], LEVELS["error"]
 
 def test_split_docker_line_nanoseconds():
     ts, payload = split_docker_line("2026-11-08T02:20:07.123456789Z hello world")
@@ -52,3 +56,60 @@ def test_uncastable_numbers_and_nulls_are_none():
 def test_pathologically_nested_json_is_plain_text():
     p = "{" * 100_000
     assert parse_payload(p)["msg"] == p
+
+def events(name):
+    return parse_stream(FIX.joinpath(name).read_text().splitlines(), "api-1", "api", "p")
+
+def test_pilot_levels_and_grouping():
+    ev = events("pilot_api.log")
+    assert [e.level for e in ev] == [I, W, I, W, E, E]
+    assert ev[3].extra == ["  decoded = self.decode_complete("]
+
+def test_python_traceback_folds_to_one_event():
+    tb = events("pilot_api.log")[4]
+    assert tb.error == "KeyError: 'sku'"
+    assert tb.frame == "/app/orders/views.py:42 in create_order"
+    assert len(tb.extra) == 3
+
+def test_ansi_stripped():
+    assert events("pilot_api.log")[5].msg == "ERROR db pool exhausted"
+
+def test_js_and_java_frames():
+    js, java = events("stacks.log")
+    assert (js.level, js.error, js.frame) == (E, "Error: boom", "handler (/app/src/api.js:10:5)")
+    assert java.frame == "com.acme.Orders.create(Orders.java:88)" and len(java.extra) == 2
+
+def test_json_stack_gets_frame():
+    line = '2026-11-08T02:20:07.0Z {"level":"error","message":"x","exc_info":"Traceback (most recent call last):\\n  File \\"a.py\\", line 1, in f\\nKeyError: 1"}'
+    (e,) = parse_stream([line], "c", "s", "p")
+    assert e.frame == "a.py:1 in f"
+    assert e.error == "KeyError: 1"  # exc_info only, so error comes from the stack summary
+
+def test_grouper_tracks_last_feed():
+    t = iter([5.0])
+    g = Grouper("c", "s", "p", clock=lambda: next(t))
+    g.feed(*split_docker_line("2026-11-08T02:20:07.0Z ERROR x"))
+    assert g.last_feed == 5.0
+
+@pytest.mark.parametrize("p, level", [
+    ("[INFO] hi", "info"), ("TRACE x", "debug"), ("WARNING x", "warn"), ("CRITICAL x", "fatal"), ("PANIC x", "fatal"),
+    ("ValueError: x", "error"), ("a.b.BarException: x", "error"), ("DeprecationWarning: x", "warn"),
+    ("error: lower case is not a level", "info"), ("hello", "info"),
+])
+def test_plain_text_levels(p, level):
+    assert parse_payload(p)["level"] == LEVELS[level]
+
+def test_json_line_with_traceback_text_does_not_swallow_next_line():
+    tb = '2026-11-08T02:20:07.0Z {"level":"error","message":"x","exc_info":"Traceback (most recent call last):\\nKeyError: 1"}'
+    ev = parse_stream([tb, "2026-11-08T02:20:08.0Z next"], "c", "s", "p")
+    assert [e.msg for e in ev] == ["x", "next"]
+
+def test_service_trace_and_raw():
+    j = '2026-11-08T02:20:07.0Z {"msg":"m","service":"billing","trace_id":"abc"}'
+    a, b = parse_stream([j, "2026-11-08T02:20:08.0Z \x1b[0mtrace abc"], "c-1", "api", "p")
+    assert (a.service, a.trace, a.raw) == ("billing", "abc", j.split(" ", 1)[1])
+    assert (b.service, b.raw, b.container, b.project) == ("api", "trace abc", "c-1", "p")
+
+def test_untimestamped_lines_skipped_and_newlines_stripped():
+    ev = parse_stream(["Error response from daemon: x\n", "2026-11-08T02:20:08.0Z ok\r\n"], "c", "s", "p")
+    assert [e.msg for e in ev] == ["ok"]

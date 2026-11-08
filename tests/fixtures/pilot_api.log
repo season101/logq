@@ -1,0 +1,10 @@
+2026-11-08T02:20:07.000000001Z [2026-11-08 02:20:07 +0000] [10] [INFO] Booting worker with pid: 10
+2026-11-08T02:20:07.000000002Z [2026-11-08 02:20:07 +0000] [10] [WARNING] Reloader is on. Use in development only!
+2026-11-08T02:20:08.000000000Z Not Found: /api/health/
+2026-11-08T02:20:09.000000000Z /usr/local/lib/python3.12/site-packages/jwt/api_jwt.py:370: InsecureKeyLengthWarning: The HMAC key is 29 bytes long
+2026-11-08T02:20:09.000000001Z   decoded = self.decode_complete(
+2026-11-08T02:20:10.000000000Z Traceback (most recent call last):
+2026-11-08T02:20:10.000000001Z   File "/app/orders/views.py", line 42, in create_order
+2026-11-08T02:20:10.000000002Z     sku = data["sku"]
+2026-11-08T02:20:10.000000003Z KeyError: 'sku'
+2026-11-08T02:20:11.000000000Z [31mERROR[0m db pool exhausted
