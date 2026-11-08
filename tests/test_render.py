@@ -43,10 +43,39 @@ def test_redact_keeps_surrounding_text(text, expected):
     assert redact(text) == expected
     assert redact(redact(text)) == redact(text)
 
+@pytest.mark.parametrize("secret,text,expected", [
+    # Authorization with any scheme word, bare or quoted
+    ("abc123", "authorization: Token abc123", "authorization: [REDACTED]"),
+    ("abc123", '{"Authorization": "Token abc123"}', '{"Authorization": "[REDACTED]"}'),
+    ("gho_16C7e42F292c6912E7710c838347Ae178B4a", "Authorization: token gho_16C7e42F292c6912E7710c838347Ae178B4a", "Authorization: [REDACTED]"),
+    ("xyz789", "Authorization: ApiKey xyz789 next=1", "Authorization: [REDACTED] next=1"),
+    ("SigPart99", 'headers={"Authorization": "AWS4-HMAC-SHA256 Credential=ID/20260101/s3, SignedHeaders=host, Signature=SigPart99"}', 'headers={"Authorization": "[REDACTED]"}'),
+    ("SigPart99", "Authorization: AWS4-HMAC-SHA256 Credential=ID/20260101/s3, SignedHeaders=host;x-amz-date, Signature=SigPart99", "Authorization: [REDACTED]"),
+    ("resp0nse", 'Authorization: Digest username="bob", realm="r", response="resp0nse"', "Authorization: [REDACTED]"),
+    ("resp0nse", '{"Authorization": "Digest username=\\"bob\\", response=\\"resp0nse\\""}', '{"Authorization": "[REDACTED]"}'),
+    # URL credentials: empty user, "@" in the password
+    ("s3cretpw", "redis://:s3cretpw@redis:6379/0", "redis://:[REDACTED]@redis:6379/0"),
+    ("p@ss", "postgres://app:p@ss@db:5432/x", "postgres://app:[REDACTED]@db:5432/x"),
+    # keywords in the middle of the key name
+    ("wJalrXUtnFEMI/K7MDENG", "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG ok", "AWS_SECRET_ACCESS_KEY=[REDACTED] ok"),
+    ("hunter2", "password1=hunter2&password2=hunter2", "password1=[REDACTED]&password2=[REDACTED]"),
+    ("hunter2", "password_confirmation=hunter2", "password_confirmation=[REDACTED]"),
+    ("hunter2", 'passwordConfirm: "hunter2"', 'passwordConfirm: "[REDACTED]"'),
+    ("hunter2", "SECRET_KEY=hunter2", "SECRET_KEY=[REDACTED]"),
+])
+def test_redact_leak_probes(secret, text, expected):
+    assert redact(text) == expected and secret not in redact(text)
+    assert redact(redact(text)) == redact(text)
+
+def test_redact_does_not_touch_plain_urls_and_counters():
+    text = "GET http://host:8080/x?mail=a@b.com token_count=5 password_policy=strict"
+    assert redact(text) == text
+
 def test_redact_unterminated_quote_and_long_lines():
     assert redact('{"password": "abc') == '{"password": "[REDACTED]"'
     start = time.perf_counter()
-    for s in ("a" * 200_000, "eyJ" * 60_000, 'password="' + "\\" * 5_000, "http://" + "a:" * 30_000):
+    for s in ("a" * 200_000, "eyJ" * 60_000, 'password="' + "\\" * 5_000, "http://" + "a:" * 30_000, "a://" * 50_000,
+              "Authorization: " + "a " * 100_000, "Authorization: X " + "k=v, " * 50_000, "authorization=" * 10_000):
         redact(s)
     assert time.perf_counter() - start < 2
 
@@ -58,6 +87,16 @@ def test_redact_runs_on_every_returned_line():
 def test_secret_is_redacted_before_truncation():
     out = format_event(ev(msg="x" * 285 + " AKIAABCDEFGHIJKLMNOP"), TZ)
     assert "AKIA" not in out
+
+@pytest.mark.parametrize("secret,kept,visible", [  # `kept` = secret characters that survive before the 300-char cut
+    ("postgres://app:supersecretpassword@db:5432/x", 21, "supers"),
+    ("sk-" + "A" * 30, 10, "sk-AAAA"),
+    ("ghp_" + "b" * 36, 12, "ghp_bbbb"),
+    ("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnX3BhcnQ", 30, "eyJ"),
+])
+def test_repeat_secret_straddling_the_cut_is_redacted(secret, kept, visible):
+    out = format_repeat(ev(level=40, msg="x" * (298 - kept) + " " + secret), 2, 30)
+    assert visible not in out and "[REDAC" in out  # the marker itself may be cut
 
 def test_request_line():
     e = ev(msg="request finished", method="POST", route="/api/orders", status=500, duration_ms=812, func="create_order", trace="7f3a9c21aabbccdd")

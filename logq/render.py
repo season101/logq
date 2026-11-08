@@ -8,24 +8,37 @@ from logq.parse import LEVEL_NAMES, Event
 MSG_LIMIT = 300
 READ_CAP = 50000  # keep equal to the default cap of docker.read_logs
 _B = r"(?<![A-Za-z0-9])"  # not in the middle of a word, so `task-queue-…` is not an sk- key
-_KEYS = r"(?:password|passwd|secret(?:[_-]?key)?|token|api[_-]?key)"
+_KEYS = r"(?:pass(?:word|wd)(?:\d+|[_-]?confirm(?:ation)?)?|secret(?:[_-]?(?:access[_-]?)?key)?|token|api[_-]?key)"
+_QUOTED = r"""(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)?"""  # an unterminated quote runs to end of line
+_VAL = r"""(?:"[^"\n]*"|[^\s,"']+)"""
+# Authorization: an optional scheme word (any: Bearer, Token, ApiKey, AWS4-HMAC-SHA256, Digest, ...), then a token or key=value params
+# joined by commas (SigV4, Digest). A quoted value is redacted whole.
+_AUTH = re.compile(rf"""(?P<k>\bauthorization["']?[ \t]*[:=][ \t]*)(?:{_QUOTED}|(?:[A-Za-z][\w-]*[ \t]+)?(?:[\w.-]+=)?{_VAL}(?:,[ \t]*[\w.-]+={_VAL})*)""", re.I)
 # (pattern, replacement); order matters: Bearer before the generic key rule so `token: Bearer x` loses both words.
 _RULES = [(re.compile(p, f), r) for p, f, r in [
-    (r"(\bauthorization[\"']?[ \t]*[:=][ \t]*[\"']?)(?:(?:bearer|basic|digest)[ \t]+)?[^\s\"',;]+", re.I, r"\1[REDACTED]"),
     (r"(\bbearer[ \t]+)[\w.~+/=-]+", re.I, r"\1[REDACTED]"),
-    (r"([a-z][a-z0-9+.-]{0,31}://[^\s:/@]+:)[^\s@/]+(?=@)", re.I, r"\1[REDACTED]"),
+    # Scheme is bounded and the password runs to the last `@` of the token, so `p@ss` is covered. Anchored on `://` to stay linear.
+    # shortcut: passwords containing a raw "/" are not redacted (RFC 3986 requires percent-encoding, and allowing "/" would eat
+    # `http://host:80/p?mail=a@b.c`), upgrade if real logs show them.
+    (r"([a-z][a-z0-9+.-]{0,31}://[^\s:/@]*:)[^\s/]+(?=@)", re.I, r"\1[REDACTED]"),
     (_B + r"eyJ[\w-]+\.[\w-]+\.[\w-]+", 0, "[REDACTED]"),
     (_B + r"(?:AKIA[0-9A-Z]{16}|sk-[\w-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_\w{20,}|xox[bp]-[\w-]+)", 0, "[REDACTED]"),
 ]]
-# key=value, key: value and "key": "value"; keeps key, separator and quotes, replaces only the value (an unterminated quote runs to end of line).
+# key=value, key: value and "key": "value"; keeps key, separator and quotes, replaces only the value.
 # No alternative overlaps another (bounded scheme above, `[^\\\n]` beside `\\.`), so long lines cannot backtrack badly.
-_KV = re.compile(rf"""(?P<k>{_KEYS}["']?[ \t]*[:=][ \t]*)(?:(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)?|[^\s,;&"']+)""", re.I)
+_KV = re.compile(rf"""(?P<k>{_KEYS}["']?[ \t]*[:=][ \t]*)(?:{_QUOTED}|[^\s,;&"']+)""", re.I)
+
+
+def _keep_quotes(m: re.Match) -> str:
+    q = m["q"] or ""
+    return f"{m['k']}{q}[REDACTED]{q}"
 
 
 def redact(text: str) -> str:
+    text = _AUTH.sub(_keep_quotes, text)
     for rx, repl in _RULES:
         text = rx.sub(repl, text)
-    return _KV.sub(lambda m: f"{m['k']}{m['q'] or ''}[REDACTED]{m['q'] or ''}", text)
+    return _KV.sub(_keep_quotes, text)
 
 
 def ago(delta: timedelta) -> str:
@@ -86,7 +99,7 @@ def format_docker_event(evt: dict, tz: tzinfo) -> str | None:
 
 
 def format_repeat(e: Event, count: int, window_s: int) -> str:
-    return redact(f"↻ {e.service} {LEVEL_NAMES[e.level]} {_cut(e.error or e.msg)} repeated {count}x in {window_s}s")
+    return redact(f"↻ {e.service} {LEVEL_NAMES[e.level]} {_cut(redact(e.error or e.msg))} repeated {count}x in {window_s}s")  # redact before the cut
 
 
 def footer(shown: int, matched: int, containers: list[str], window: str, level: int, trace: str | None, capped: list[str]) -> str:
