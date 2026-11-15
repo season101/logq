@@ -1,69 +1,253 @@
-% Skeleton for the CSC 5323 "Advances" literature review.
+% CSC 5323 "Advances" paper: literature review and pilot of logq.
 % Template: ICSE 2027 Research Track requires the IEEE conference proceedings
 % template, \documentclass[10pt,conference]{IEEEtran} without compsoc/compsocconf;
 % 10 pages of main text plus 2 pages of references; double-anonymous review.
 % Source: https://conf.researchr.org/track/icse-2027/icse-2027-research-track (read 2026-11-15).
-% Headings and TODOs only: the prose is the author's to write (course AI policy).
+% Draft prose by Claude Opus 5.5 (claude-opus-5-5); see the AI Assistance Disclosure
+% section and ../search-log.md. Every \todo{} is for the author: numbers come from the
+% TeamMatch pilot, and judgments marked "user to confirm" must be the author's own.
 \documentclass[10pt,conference]{IEEEtran}
 \usepackage{cite}
 \usepackage{url}
+\usepackage{xcolor}
+\usepackage{array}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\cmd}[1]{\texttt{#1}}
 
 \begin{document}
 
-\title{TODO: title}
+\title{Filtered Runtime Context for Coding Agents:\\A Literature Review and a Pilot of logq}
 % Double-anonymous for a real ICSE submission; for the course, put your name here.
-\author{\IEEEauthorblockN{TODO: author}\IEEEauthorblockA{Louisiana Tech University}}
+\author{\IEEEauthorblockN{\todo{author}}\IEEEauthorblockA{Louisiana Tech University}}
 \maketitle
 
 \begin{abstract}
-TODO: one paragraph on the problem, the advance (filtered, redacted live runtime context for coding agents), the pilot, and the evaluation result.
+AI coding agents now debug software by running commands and reading what comes back. When the application runs as several Docker containers, most of the evidence a debugger needs is in container logs and distributed traces: output that is large, interleaved across services, sometimes secret, and partly written by whoever sends the application a request. This paper reviews 25 sources on LLM agents for debugging and program repair, agent--computer interfaces, runtime context for code LLMs, LLMs over logs and operational telemetry, and agent tool protocols and their risks, and compares how each line of work is evaluated. The reviewed agents gain from runtime evidence and from interfaces built for them, but that evidence is mostly test results or the state of a single process; telemetry-driven agents target incident root-cause analysis in production clouds; and the risks of handing logs to a model are studied apart from any agent evaluation. We then describe logq, a command-line tool and agent skill that gives a coding agent filtered, redacted, time-ordered logs across a Docker Compose project, a live filtered log stream, and request traces through Jaeger's Model Context Protocol (MCP) server, and we pilot it on TeamMatch, a Django and Next.js course project. In a before/after experiment, an agent debugged \todo{N} tasks with and without logq; \todo{one-sentence result from the pilot}.
 \end{abstract}
 
 \section{Introduction}
-TODO: the debugging problem coding agents face with raw container logs, the advance, and your contributions.
 
-\section{Background and Related Work}
-TODO: one sentence framing how the five groups below relate to the advance.
+LLM-based agents now resolve real repository issues end to end~\cite{jimenez2024swebench,yang2024sweagent,zhang2024autocoderover,bouzenia2025repairagent,liu2026agentsurvey}. They work by alternating reasoning with actions such as tool calls and reading the results~\cite{yao2023react}, and the design of the interface between agent and computer measurably changes how well they do~\cite{yang2024sweagent}.
+
+Debugging a running application is different from fixing a function against a failing test. When the software is a set of containers (an API, a worker, a database, object storage, a web front end), the evidence of a failure is spread across each container's output: a stack trace in one service, a retried call in another, an exit code from a container that crashed without printing anything. A coding agent today typically reads this with \cmd{docker logs}, one container at a time. That floods the agent's context with unrelated lines, cannot connect one request's lines across services, and misses crashes that leave no log line. Three findings from adjacent literature raise the stakes: language models use information in the middle of long inputs poorly, and worse as inputs grow~\cite{liu2024lostmiddle}; software logs contain personal and quasi-identifying data~\cite{aghili2025logprivacy}; and text an LLM application retrieves can act as instructions to it~\cite{greshake2023injection}.
+
+The advance studied here is to give a coding agent \emph{filtered, redacted, live runtime context} instead of raw logs. Our tool, logq, reads container logs through the Docker daemon on demand, filters them by service, level, trace ID, route or status, merges them in time order, removes secrets from every line, and reports containers that exited or are unhealthy. A \emph{follow} mode streams only matching lines and lifecycle events while a user reproduces a problem. For the request flow across services, logq starts a local Jaeger instance and the agent reads traces through Jaeger's MCP server~\cite{hou2026mcp}. The approach is immature: the Jaeger release whose documentation first describes its MCP server appeared two days before our design was written, and the studies we found that give agents logs and traces target incident response in production clouds, not a developer debugging local containers.
+
+This paper makes three contributions:
+\begin{itemize}
+\item a review of 25 sources across five areas, with a comparison of how each line of work evaluates its claims (Section~\ref{sec:related}, Table~\ref{tab:eval});
+\item the design of logq and its agent skill (Section~\ref{sec:approach});
+\item a pilot of logq in TeamMatch, a course team project, with a before/after debugging experiment (Section~\ref{sec:eval}) and its threats to validity (Section~\ref{sec:threats}).
+\end{itemize}
+
+\section{Background and Related Work}\label{sec:related}
+
+The sources were found with an AI-assisted search whose queries, inclusion criteria and refinements are logged in the accompanying \cmd{search-log.md}; every source was checked against its DOI or arXiv record (see the AI Assistance Disclosure). We included peer-reviewed work and arXiv preprints from 2021 to 2026, mainly from ICSE, FSE, ISSTA, NeurIPS and ICLR, widened to EuroSys, MLSys, ACL, TACL and AISec where the canonical paper on a needed topic appeared there. The five subsections below follow the topic groups of that search.
 
 \subsection{LLM Agents for Debugging and Program Repair}
-TODO: how agentic and agentless repair gather context, and what they leave out at runtime.
-% Sources: jimenez2024swebench, bouzenia2025repairagent, xia2025agentless,
-% zhang2024autocoderover, liu2026agentsurvey
+
+SWE-bench set the dominant evaluation for this area: 2,294 problems drawn from real GitHub issues and pull requests in 12 Python repositories, where a model receives the codebase and an issue description and must edit the code to resolve it~\cite{jimenez2024swebench}. Its authors note that the tasks call for interacting with execution environments and processing very long contexts; at release, the best model resolved 1.96\% of issues.
+
+Agentic repair systems respond with tools. RepairAgent treats the LLM as an agent that chooses tools to gather information about a bug, collect repair ingredients and validate fixes, guided by a finite-state machine; on Defects4J it repaired 164 bugs, 39 of which no prior technique fixed, at about 270,000 tokens per bug~\cite{bouzenia2025repairagent}. AutoCodeRover searches the program's structure (classes and methods in the abstract syntax tree) rather than treating a project as a bag of files, and adds spectrum-based fault localization when a test suite exists; it resolved 19\% of SWE-bench Lite at an average cost of \$0.43~\cite{zhang2024autocoderover}. Agentless asks whether that machinery is needed: a fixed three-phase process of localization, repair and patch validation, in which the LLM does not choose actions or tools, resolved 32.00\% of SWE-bench Lite at a cost of \$0.70~\cite{xia2025agentless}. A survey of 124 papers organizes the field by SE task and by the agent components of planning, memory, perception and action~\cite{liu2026agentsurvey}.
+
+Across these systems, the context the model works from is source code, an issue or bug report, and test outcomes. Runtime evidence enters as test results and, in AutoCodeRover, as coverage-based fault localization. The evaluations are resolve rates on benchmarks of historical bugs, judged by each project's tests, plus cost in tokens or dollars. Agentless adds a caution that matters for any evaluation built on issue text: its manual audit of SWE-bench Lite found issues whose description contained the exact fix and others whose description was insufficient or misleading, and it built a filtered subset, SWE-bench Lite-S, for a more rigorous comparison~\cite{xia2025agentless}.
 
 \subsection{Agent--Computer Interfaces and Tool Use}
-TODO: why interface design for agents matters, and where a log/trace interface fits.
-% Sources: yao2023react, yang2024sweagent
+
+ReAct prompts a model to interleave reasoning traces with task actions, so that reasoning can plan and track actions while actions gather information from outside sources; with a simple Wikipedia API it reduced the hallucination and error propagation of chain-of-thought on question answering and fact verification, and it outperformed imitation and reinforcement learning on two interactive benchmarks by 34 and 10 points of absolute success rate~\cite{yao2023react}. The RCA agent of Roy et al., discussed below, is a ReAct agent~\cite{roy2024rcaagents}.
+
+SWE-agent argues that LM agents are a new category of end user with their own needs, and that they benefit from interfaces built for them, as humans benefit from IDEs~\cite{yang2024sweagent}. Its agent--computer interface (ACI) gives the agent commands to create and edit files, navigate a repository, and run tests and other programs; with it the agent reached 12.5\% pass@1 on SWE-bench and 87.7\% on HumanEvalFix, and the paper analyzes how ACI design choices affect agent behavior and performance.
+
+The ACI argument transfers directly to runtime output. \cmd{docker logs} is an interface designed for a human with scrollback and \cmd{grep}; an agent with a bounded context needs output that is already filtered, ordered and summarized, and that says what it did not show. The ACI work is evaluated by holding the model and benchmark fixed and varying the interface, which is also how logq should be evaluated.
 
 \subsection{Runtime and Execution Context for Code LLMs}
-TODO: evidence that execution feedback and debugger state improve LLM debugging.
-% Sources: chen2024selfdebug, zhong2024ldb, levin2025chatdbg, yuan2025debuggym,
-% li2024diff
+
+A second line of work gives code models evidence from running the code. Self-Debugging teaches a model, through few-shot demonstrations, to run its program, explain the code, and use the execution results to fix it; it improved baseline accuracy by up to 12\% on TransCoder and MBPP, where unit tests exist, by 2--3\% on Spider, where they do not, and matched baselines that sample more than ten times as many programs~\cite{chen2024selfdebug}. LDB goes finer: it splits a program into basic blocks, records the values of intermediate variables after each block at runtime, and has the model verify each block against the task, improving baselines by up to 9.8\% on HumanEval, MBPP and TransCoder~\cite{zhong2024ldb}. ChatDBG puts an LLM inside LLDB, GDB and Pdb and lets it ``take the wheel'': it navigates stacks and inspects program state on its own, then reports back; for Python programs, one query produced an actionable fix 67\% of the time and one follow-up raised that to 85\%~\cite{levin2025chatdbg}. debug-gym, a preprint, provides a text environment with a Python debugger as an agent tool, on the premise that agents benefit from interactively seeking the information their task needs~\cite{yuan2025debuggym}. Outside debugging, Li et al.\ show the same effect for commit messages: a ReAct-prompted model that retrieves software context beyond the diff wrote messages that human raters scored 30.2\% above human-written ones and 71.6\% above prior methods~\cite{li2024diff}.
+
+This work moves from passive runtime evidence (the result of running tests) to active evidence the agent chooses to collect (debugger state). Its evaluations are function- or program-level: pass rates on HumanEval, MBPP and TransCoder~\cite{chen2024selfdebug,zhong2024ldb}, and fix rates on programs with known bugs~\cite{levin2025chatdbg}. All of it inspects a single process. A failure in a multi-container application is different: the evidence is produced by several processes, often by services other than the one at fault, and stopping a live service under a debugger is often impractical. In such a system, logs and traces are the runtime state.
 
 \subsection{LLMs over Logs and Operational Telemetry}
-TODO: LLM log parsing and LLM/agent root-cause analysis over logs, metrics and traces.
-% Sources: ma2024llmparser, jiang2024lilac, jiang2024loghub2, ahmed2023rca,
-% chen2024rcacopilot, roy2024rcaagents, xu2025openrca, chen2025aiopslab
+
+\emph{Log parsing.} Log parsing turns raw log lines into templates and parameters for downstream analysis. LLMParser fine-tunes generative LLMs with few examples and reaches 96\% average parsing accuracy across 16 open-source systems, with the smaller Flan-T5-base matching LLaMA-7B~\cite{ma2024llmparser}. LILAC uses in-context learning with hierarchically sampled demonstrations and an adaptive cache of templates, improving the average F1 of template accuracy by 69.5\% while cutting LLM queries by orders of magnitude~\cite{jiang2024lilac}. Loghub-2.0 replaces the older Loghub benchmark with 14 datasets averaging 3.6 million lines, re-evaluates 15 parsers, adds a metric robust to imbalanced data, and identifies logs of rare events as still hard to parse~\cite{jiang2024loghub2}. These parsers are evaluated by accuracy against annotated templates. logq takes the opposite route: it asks applications to log one JSON object per line with OpenTelemetry field names and uses parsing heuristics only for plain-text output, where LLM parsers could later help.
+
+\emph{Incidents and root-cause analysis.} Ahmed et al.\ ran the first large-scale study of LLMs for recommending root causes and mitigations of production incidents: GPT-3.x models, zero-shot, fine-tuned and multi-task, on more than 40,000 Microsoft incidents, evaluated with lexical and semantic metrics and with the incident owners themselves~\cite{ahmed2023rca}. RCACopilot routes an incident to a handler by alert type, aggregates the runtime diagnostic information that handler collects, and has an LLM predict a root-cause category with an explanation; it reached an RCA accuracy of up to 0.766 on a year of Microsoft incidents, and its collection component has run in production for over four years~\cite{chen2024rcacopilot}. Roy et al.\ observe that earlier LLM approaches could not collect additional diagnostic data such as logs, metrics or databases, and evaluate a ReAct agent with retrieval tools on out-of-distribution production incidents: it was competitive with strong baselines with much higher factual accuracy, incident discussions as extra input did not help, and a case study gave the agent a team's own diagnostic services as tools~\cite{roy2024rcaagents}. OpenRCA contributes a benchmark of 335 failures from three enterprise systems with over 68\,GB of logs, metrics and traces; its authors frame the task as reasoning over heterogeneous, long-context telemetry, and the best configuration, Claude~3.5 with their RCA agent, solved 11.34\% of cases~\cite{xu2025openrca}. AIOpsLab builds the environment instead of the dataset: it deploys microservice systems, injects faults, generates workloads, exports telemetry, and exposes interfaces through which agents act and are scored~\cite{chen2025aiopslab}.
+
+This line follows the same arc as program repair, from a fixed prompt over an incident report to agents that fetch telemetry themselves~\cite{roy2024rcaagents,xu2025openrca,chen2025aiopslab}. Its setting differs from logq's: on-call engineers diagnosing incidents in production clouds that already have telemetry pipelines, rather than a developer debugging during development against local containers with no collector. Its evaluation methods also differ from the repair literature's: historical incident datasets scored by category accuracy or text similarity~\cite{ahmed2023rca,chen2024rcacopilot,roy2024rcaagents}, human judgment by incident owners~\cite{ahmed2023rca}, curated failures with labelled root causes~\cite{xu2025openrca}, and fault injection into a live deployment~\cite{chen2025aiopslab}. The last is the closest analogue to a controlled evaluation of logq, in which a known fault is introduced into a running application and an agent must find it.
 
 \subsection{Agent Tool Protocols, Untrusted Context, and Sensitive Data}
-TODO: MCP, prompt injection through tool output, secrets in logs, and context-length limits.
-% Sources: hou2026mcp, greshake2023injection, aghili2025logprivacy,
-% liu2024lostmiddle
 
-\section{Approach}
-TODO: what logq and the Jaeger MCP server give the agent (filtering, redaction, follow, traces), with a figure.
+The Model Context Protocol is an open standard for two-way communication and dynamic discovery between AI models and external tools. Hou et al.\ define an MCP server's lifecycle in four phases and 16 activities, derive a threat taxonomy of four attacker types and 16 threat scenarios, illustrate it with real-world case studies, and propose safeguards for each phase~\cite{hou2026mcp}. Greshake et al.\ show that LLM-integrated applications blur the line between data and instructions: instructions planted in data the application retrieves can manipulate its behavior and control which APIs it calls, which they demonstrate against Bing Chat and code-completion engines~\cite{greshake2023injection}. Logs are such data: anyone who can make a service log a string, for example through a request path or header, can put text in front of the agent. Aghili et al.\ find personally identifiable information and quasi-identifiers in 25 public log datasets, review what GDPR and CCPA require, review the log-anonymization literature, and survey 45 practitioners, concluding that the field lacks consistent definitions of sensitivity and standard guidelines~\cite{aghili2025logprivacy}. Finally, Liu et al.\ show that models use information at the start or end of their input best and degrade when the relevant part sits in the middle, even models built for long contexts~\cite{liu2024lostmiddle}.
 
-\section{Evaluation}
-TODO: the TeamMatch pilot and before/after debugging experiment: setup, measures, results.
-% Possible method reference for LLM-assisted judging/annotation: ahmed2025annotation
+These results motivate three of logq's design rules: filter before the agent reads~\cite{liu2024lostmiddle}, redact every line with no option to turn it off~\cite{aghili2025logprivacy}, and treat log content as data, never as instructions~\cite{greshake2023injection}. In the reviewed work, however, these risks are studied apart from agent evaluations: through case studies~\cite{hou2026mcp}, attack demonstrations~\cite{greshake2023injection}, dataset analysis and surveys~\cite{aghili2025logprivacy}, and controlled retrieval tasks~\cite{liu2024lostmiddle}. None of the debugging or RCA evaluations above reports whether sensitive data in runtime output reached the model.
 
-\section{Threats to Validity}
-TODO: internal, external and construct threats of the pilot (single project, single agent, small n).
+\subsection{Summary}
+
+Three gaps frame this work. First, runtime context in the repair literature is test results or the state of one process under a debugger. Second, agents that read logs, metrics and traces have been built for production incident response, not for development. Third, the risks of feeding logs to a model are studied separately from agent evaluations. logq sits where the three meet. Table~\ref{tab:eval} summarizes how the empirical work reviewed here is evaluated.
+
+\begin{table*}[t]
+\caption{How the reviewed empirical work is evaluated}\label{tab:eval}
+\centering\footnotesize
+\begin{tabular}{>{\raggedright}p{0.17\textwidth}>{\raggedright}p{0.25\textwidth}>{\raggedright}p{0.25\textwidth}>{\raggedright\arraybackslash}p{0.23\textwidth}}
+\hline
+\textbf{Work} & \textbf{Context the model gets} & \textbf{Evaluation} & \textbf{Headline measure} \\
+\hline
+SWE-bench~\cite{jimenez2024swebench} & Codebase and issue text & 2,294 GitHub issues, judged by tests & 1.96\% resolved (best model) \\
+RepairAgent~\cite{bouzenia2025repairagent} & Code, tests, tool results chosen by the agent & Defects4J & 164 bugs fixed; tokens per bug \\
+AutoCodeRover~\cite{zhang2024autocoderover} & AST code search; fault localization from tests & SWE-bench Lite (300 issues) & 19\% resolved; cost \\
+Agentless~\cite{xia2025agentless} & Fixed localize--repair--validate pipeline & SWE-bench Lite; audited subset Lite-S & 32.00\% resolved; cost \\
+SWE-agent~\cite{yang2024sweagent} & Purpose-built agent--computer interface & SWE-bench, HumanEvalFix & pass@1 12.5\%, 87.7\% \\
+Self-Debugging~\cite{chen2024selfdebug} & Execution results and self-explanation & Spider, TransCoder, MBPP & accuracy gain up to 12\% \\
+LDB~\cite{zhong2024ldb} & Intermediate variable values per basic block & HumanEval, MBPP, TransCoder & gain up to 9.8\% \\
+ChatDBG~\cite{levin2025chatdbg} & Debugger state the LLM inspects itself & C/C++ and Python programs with known bugs & actionable fix 67\% (85\% with follow-up) \\
+LLMParser~\cite{ma2024llmparser}, LILAC~\cite{jiang2024lilac} & Raw log lines & Annotated log datasets & parsing / template accuracy \\
+Ahmed et al.~\cite{ahmed2023rca} & Production incident records & 40,000+ Microsoft incidents; incident-owner review & lexical and semantic similarity \\
+RCACopilot~\cite{chen2024rcacopilot} & Diagnostics collected per alert type & One year of Microsoft incidents & accuracy up to 0.766 \\
+Roy et al.~\cite{roy2024rcaagents} & Logs and diagnostics fetched by a ReAct agent & Out-of-distribution incidents; team case study & parity with baselines; factual accuracy \\
+OpenRCA~\cite{xu2025openrca} & 68\,GB of logs, metrics and traces & 335 labelled failures & 11.34\% solved (best) \\
+AIOpsLab~\cite{chen2025aiopslab} & Live telemetry through agent interfaces & Fault injection into microservice deployments & agent performance on operations tasks \\
+\hline
+\end{tabular}
+\end{table*}
+
+\section{Approach: logq}\label{sec:approach}
+
+\subsection{Goals}
+
+When an agent debugs an application in local Docker containers, it should see only the log lines that matter, from every container of the application, in time order, with secrets removed. Four properties make that concrete: a query for one trace ID returns that request's lines from every service, oldest first; every query states what it searched (containers, time window, level), so an empty result is never mistaken for success; containers that exited, are restarting or are unhealthy are reported first; and no secret pattern from the test fixtures appears in any output.
+
+\subsection{Architecture}
+
+logq is a Python command-line program with no dependencies beyond the standard library. It does not run a collector: the Docker daemon already stores, streams and labels every container's logs, so logq reads from it only while a command runs, by calling the \cmd{docker} CLI (\cmd{ps}, \cmd{inspect}, \cmd{logs}, \cmd{events}) under the user's account and active Docker context. Each command passes through the same pipeline: discover the containers of a Compose project from their labels, read their logs in parallel, parse each line into an event, filter, then shape the output (redact, fold multi-line errors, cap) and print. Without an explicit project, logq picks the Compose project whose working directory contains the current directory.
+
+\subsection{Commands}
+
+\cmd{logq ps} prints one line per container with its state, health, uptime and restart count, and marks exited, restarting and unhealthy containers.
+
+\cmd{logq query} reads a time window (default 15 minutes) and prints the most recent matches (default 50) in chronological order. Filters select by service, minimum level (default \emph{warn}), trace or request ID (prefix match, also found in raw text so proxies' request IDs match), HTTP route, method and status class, code function, and a regular expression. Field filters lower the default level to \emph{debug}, because the per-request ``request finished'' lines they target are informational. A footer always names the containers, project, window and level, says when older matches were dropped or a read cap was hit, and counts events that matched every filter but fell below the level, so an error that a plain-text heuristic misjudged as info still shows up as a number. Fig.~\ref{fig:query} shows the output format.
+
+\begin{figure*}[t]
+\centering\scriptsize
+\begin{verbatim}
+! para-dashboard-app-v01-web-1 exited(1) 40s ago
+12:04:31.180 worker WARN  retrying charge attempt=2 trace=7f3a9c21
+12:04:31.214 api    ERROR KeyError: 'sku' at orders/views.py:42 in create_order (+14 lines) trace=7f3a9c21
+12:04:31.220 api    INFO  POST /api/orders 500 812ms create_order request finished trace=7f3a9c21
+-- 3 of 3 matches · 4 containers (api, worker, db, web) · project para-dashboard-app-v01 · 15m · level>=debug · trace=7f3a9c21
+\end{verbatim}
+\caption{Illustrative output of \cmd{logq query --trace 7f3a9c21}, from the design specification: an exited container first, one request's lines from two services in time order, a folded stack trace, and a footer that states what was searched.}\label{fig:query}
+\end{figure*}
+
+\cmd{logq follow} applies the same filters live. It streams each container's new log lines on its own thread, watches Docker's container events and prints \emph{die} (with exit code), \emph{oom}, \emph{restart}, \emph{start} and changes to or from \emph{unhealthy} regardless of level, and attaches a reader to any container that starts during the watch. Repeated events are collapsed: the first occurrence prints, and later ones with the same key (container, level, method, route, status and error, with IDs and numbers normalized) within 30 seconds are counted and reported once as, for example, ``repeated 39x in 30s''. In Claude Code the agent runs \cmd{follow} under the Monitor tool, so each printed line reaches it as an event while the user reproduces the problem.
+
+\subsection{Parsing and Folding}
+
+A JSON log line is flattened and mapped through an alias table based on OpenTelemetry semantic conventions that also accepts the field names of pino, structlog, python-json-logger and ECS (for example \cmd{severity\_text}, \cmd{level} or \cmd{levelname} for the level; \cmd{trace\_id}, \cmd{traceId} or \cmd{request\_id} for the trace). Plain-text lines get a best-effort level from common prefixes and level words, and continuation lines, Python tracebacks and chained exceptions are grouped into one event. A multi-line error prints as one line: the error summary, the innermost stack frame, and a count of folded lines; a \cmd{--full} flag prints the whole block.
+
+\subsection{Redaction}
+
+Every output line is redacted, including \cmd{--full} output, and there is no switch to turn it off. Matches become \cmd{[REDACTED]}: bearer tokens and the whole value of \cmd{Authorization}, \cmd{Cookie} and \cmd{Set-Cookie} headers, also in prefixed keys and in lists or maps; JWTs; values after key names such as \cmd{password}, \cmd{secret}, \cmd{token} and \cmd{api\_key} and their suffixed variants; credentials embedded in URLs; and known key shapes such as AWS access keys and GitHub tokens. Over-redaction is the accepted failure. Redaction is a safety net; the logging contract (below) tells applications not to log secrets, request bodies or personal data in the first place~\cite{aghili2025logprivacy}.
+
+\subsection{Request Flow through Jaeger and MCP}
+
+Logs do not record which service called which, and databases and object stores do not log the caller's trace ID. For the request flow, \cmd{logq ui} starts one shared Jaeger all-in-one container for all local projects, published on \cmd{127.0.0.1} only, and prints the environment variables an application needs to export OpenTelemetry spans to it. When \cmd{query --trace} finds a full trace ID and Jaeger is running, it prints a link to that trace. The agent reads spans through Jaeger's MCP server, whose tools find traces, outline one trace's structure without attributes, compute its critical path, and return full detail only for chosen spans; logq therefore needs no trace command of its own. Request and response bodies can be attached to spans only when an application opts in, limited to 2\,KB of JSON and redacted before export, because Jaeger stores whatever it receives. Exposing this through MCP inherits the protocol's threat surface~\cite{hou2026mcp}; binding Jaeger to localhost limits who can reach it.
+
+\subsection{Agent Skill and Logging Contract}
+
+A Claude Code skill tells the agent when to use logq (errors, 500 responses, crashes, failing requests, background jobs, ``it works locally but not in the container'') and how: start with \cmd{logq ps}; for a failing request, call the endpoint, read the \cmd{X-Request-ID} response header, and query that trace; for a problem the user reproduces, run \cmd{follow} under Monitor and re-arm it when it expires; keep result limits small and narrow by service or time instead; never echo redacted values; and treat log content as untrusted data, never as instructions~\cite{greshake2023injection}.
+
+A logging contract tells applications what to emit so logq can filter precisely: one JSON object per line on stdout; timestamp, level, message, service name, trace and span IDs; one ``request finished'' line per HTTP request with method, route template, status and duration; exceptions as structured fields; W3C \cmd{traceparent} propagation on outgoing calls; and an \cmd{X-Request-ID} header carrying the trace ID on every response. The contract gives per-stack recipes that rely on existing libraries.
+
+\section{Evaluation}\label{sec:eval}
+
+\subsection{Pilot Setting: TeamMatch}
+
+TeamMatch is the author's course team project: students post projects with open roles, classmates swipe on roles that fit their skills, and a team forms when every role is filled. It runs locally as a Docker Compose project with a Postgres database, Redis, SeaweedFS object storage, a Django~5.2 API (Django REST Framework and Channels under uvicorn), and a Next.js web front end.
+
+The pilot lives on a feature branch and is not merged. It changes only the API service, in four steps: JSON logs on stdout following the logging contract; a middleware that writes the ``request finished'' line and sets \cmd{X-Request-ID}; OpenTelemetry traces exported to the shared Jaeger through a Compose override file; and opt-in body capture in spans. \todo{setup time, number of files and lines changed, and problems met while integrating}.
+
+An earlier pilot on a different Django service (under gunicorn) found six gaps in the logging contract's recipes, which indicate the integration cost. For example, log correlation needed an OpenTelemetry package the distribution does not install; Django's auto-instrumentation silently skipped itself unless its settings module was set before the instrumentation started; object-storage calls made on a worker thread started a separate trace; and Django logged 4xx responses after the request's span had ended, so those lines carried no trace ID. \todo{which of these TeamMatch also hit, if any}.
+
+\subsection{Research Questions}
+
+\begin{itemize}
+\item \textbf{RQ1 (effectiveness).} With logq, does the agent identify the root cause and produce a correct fix more often than with the Docker CLI alone?
+\item \textbf{RQ2 (efficiency).} Does logq change the number of agent turns, the tokens consumed, and the wall-clock time to a fix?
+\item \textbf{RQ3 (experience).} Is the workflow effective, cumbersome, accessible, and appropriate for this project, and when would we recommend it?
+\end{itemize}
+
+\subsection{Design}
+
+The experiment compares two conditions on the same tasks, holding the model and interface around them fixed and varying only the runtime-context tooling, in the manner of the ACI evaluations~\cite{yang2024sweagent}:
+\begin{itemize}
+\item \textbf{Baseline:} the agent may use the \cmd{docker} and \cmd{docker compose} CLI directly (for example \cmd{docker compose logs}); the logq skill and the Jaeger MCP server are disabled.
+\item \textbf{logq:} the agent has logq, its skill, and the Jaeger MCP server.
+\end{itemize}
+Each run starts a fresh agent session with \todo{agent and model id}, from the same commit, with the fault already present in the running application, and the same prompt template. The prompt describes the symptom as a user would report it and does not state the cause, because issue text that contains the fix inflates results~\cite{xia2025agentless}. \todo{number of tasks, runs per condition, and run order}.
+
+Tasks: \todo{one line per task: the fault, the service it is in, the symptom the prompt describes, and whether the evidence is in logs, traces or both}.
+
+\subsection{Measures}
+
+\begin{itemize}
+\item \textbf{Success:} the agent names the root cause and its fix passes \todo{the check used: tests, a request that previously failed, or both}. Success is judged by the author. \todo{if an LLM judge is used instead, justify it; Ahmed et al.\ find LLM annotations can reach human inter-rater agreement on some tasks and propose model--model agreement to decide when they are safe to use~\cite{ahmed2025annotation}}.
+\item \textbf{Turns:} the number of agent tool calls until the fix.
+\item \textbf{Tokens:} input and output tokens for the session, \todo{state whether cached input is counted}.
+\item \textbf{Time:} wall-clock time from the first prompt to the fix.
+\item \textbf{Context volume:} \todo{bytes or lines of log output the agent read, if measured}.
+\item \textbf{Secret exposure:} \todo{number of seeded secrets that appeared in the agent's transcript in each condition, if measured}.
+\end{itemize}
+
+\subsection{Results}
+
+\begin{table}[t]
+\caption{Before/after results (to be filled from the pilot)}\label{tab:results}
+\centering\footnotesize
+\begin{tabular}{lcc}
+\hline
+\textbf{Measure} & \textbf{Baseline} & \textbf{logq} \\
+\hline
+Tasks solved & \todo{x/N} & \todo{x/N} \\
+Median turns & \todo{} & \todo{} \\
+Median tokens & \todo{} & \todo{} \\
+Median time & \todo{} & \todo{} \\
+\hline
+\end{tabular}
+\end{table}
+
+\todo{RQ1 and RQ2: report Table~\ref{tab:results} per task as well as overall, with one sentence per notable difference. Report numbers only; do not generalize beyond these tasks.}
+
+\todo{RQ3: describe what the narrated screen recording shows: setup, the agent calling logq and the Jaeger MCP tools, and one task end to end.}
+
+\subsection{Discussion}
+
+\emph{Effective?} \todo{user to confirm: whether logq helped, on which tasks, and why, based on the results above}.
+
+\emph{Cumbersome?} The integration cost is front-loaded: an application must follow the logging contract before logq can filter by trace or route, and the earlier pilot shows that the recipes can fail silently. \todo{user to confirm: how much effort TeamMatch took and whether it felt cumbersome}.
+
+\emph{Accessible?} logq needs Python, the Docker CLI and, for traces, a local Jaeger container; it has no service to deploy. \todo{user to confirm: how easy it was for you and would be for teammates}.
+
+\emph{Appropriate, and would we recommend it?} \todo{user to confirm: your recommendation, and when you would or would not use it}.
+
+\section{Threats to Validity}\label{sec:threats}
+
+\emph{Internal validity.} The author built logq, chose the tasks, and judged success, which can bias every result toward the tool; fixing the prompts and the success check before any run reduces but does not remove this. LLM agents are nondeterministic, so one run per task can reverse with another; \todo{state the number of runs per task}. The amount of log noise in the running application affects the baseline more than the logq condition, so the result depends on how busy the application was during each run.
+
+\emph{Construct validity.} Turns, tokens and time are proxies for debugging effort, not measures of it; an agent can use more turns and still be more useful. Token counts depend on how the agent platform reports cached input. Tasks with a seeded fault have a known answer, which real debugging lacks, and the symptom text may give away more or less than a real report would~\cite{xia2025agentless}.
+
+\emph{External validity.} The pilot covers one application, one stack (Django and Next.js in Docker Compose), one agent and model, and one machine. The Jaeger release whose documentation first describes its MCP server is new, and MCP servers carry their own threats~\cite{hou2026mcp}. The results say nothing about production systems, which the RCA literature targets~\cite{chen2024rcacopilot,roy2024rcaagents}.
+
+\emph{Conclusion validity.} With \todo{N} tasks and \todo{k} runs, the experiment can show differences on these tasks but cannot support statistical claims; we report counts and medians only.
+
+\emph{Validity of the review.} The search was AI-assisted, used a general web search tool rather than digital-library queries, and may have missed relevant work. Every query and decision is logged, every cited record was checked against its DOI, arXiv record or proceedings page, and citation counts are reported from two services because they disagree.
 
 \section{Conclusion}
-TODO: what the evaluation shows, whether you would recommend the advance, and when.
 
-% TODO: remove \nocite{*} once the sections cite sources with \cite{...}.
-\nocite{*}
+The reviewed literature shows that coding agents improve when they can collect runtime evidence and when their tools are designed for them, that agents reading logs and traces have so far been built for production incident response, and that the risks of putting logs in front of a model, from context overload to secrets to injected instructions, are studied outside agent evaluations. logq brings these strands together for development-time debugging of containerized applications: filtered, time-ordered, redacted logs across a Compose project, a live filtered stream, and request traces through Jaeger's MCP server. In the TeamMatch pilot, \todo{one-sentence summary of the results}. \todo{user to confirm: your overall recommendation}. Future work includes LLM-based parsing for applications that cannot adopt the logging contract~\cite{jiang2024lilac,ma2024llmparser}, evaluation on fault-injection environments such as AIOpsLab~\cite{chen2025aiopslab}, and measuring robustness to instructions planted in logs~\cite{greshake2023injection}.
+
+\section*{AI Assistance Disclosure}
+
+This paper was prepared with Claude Code using the model Claude Opus 5.5 (model id \cmd{claude-opus-5-5}). The model ran the literature search and verified every source; the queries, inclusion criteria, refinements, results and verification steps are in \cmd{search-log.md}, with per-source notes in \cmd{source-matrix.md}, both beside this paper. The model also drafted the prose of every section: the Abstract, Introduction, Background and Related Work, Approach (from the logq design specification), Evaluation (method and structure only; every result is left for the author to fill from the TeamMatch pilot), Threats to Validity, and Conclusion. It did not invent results; judgments marked for the author are the author's to make. \todo{user to confirm: the instructor's permission for AI-drafted sections and its conditions, and what you reviewed and changed}.
+
 \bibliographystyle{IEEEtran}
 \bibliography{../references}
 

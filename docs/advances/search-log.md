@@ -1,6 +1,6 @@
 # Literature search log: CSC 5323 "Advances"
 
-This file records how the sources for the literature review were found and checked, as the assignment requires ("document your workflow and describe the criteria you provided"). The course allows AI "for aggregation of lit review materials, (not generation)". The AI collected, verified and organised sources only. It wrote none of the review's prose, argument or synthesis.
+This file records how the sources for the literature review were found and checked, as the assignment requires ("document your workflow and describe the criteria you provided"). The assignment text allows AI "for aggregation of lit review materials, (not generation)". The search and verification below were done under that rule. The paper prose was drafted afterwards, in a separate commit, after a policy update described in [Drafting](#drafting) at the end of this file.
 
 ## Who ran the searches
 
@@ -180,3 +180,14 @@ The record each entry was checked against is in its `annote` field in `reference
 | ISSTA 2026 study of APR agents' tooling | Could not verify: only a `.bib` file on a personal page was found |
 | "Agents in Software Engineering: Survey, Landscape, and Vision" (arXiv 2409.09030); Jin et al. survey (arXiv 2408.02479) | Venue not confirmed; one verified survey kept |
 | Course readings Nielsen (CHI 1990), Wang et al. (ICSE 2016), Inozemtseva and Holmes (ICSE 2014) | Outside 2021–2026 and outside the topic |
+
+## Drafting
+
+On 2026-11-15, after the sources above were committed, the Claude Code session coordinating this assignment relayed an update from the student: the instructor had confirmed that AI-written sections are allowed if the student reads them in class, because the deadline is short. The same model (Claude Opus 5.5, `claude-opus-5-5`) then drafted the prose of `paper/main.tex`: Abstract, Introduction, Background and Related Work, Approach, Evaluation (method and structure only), Threats to Validity, Conclusion, and an AI Assistance Disclosure section. The instructor's confirmation was not seen by the AI; the disclosure section asks the student to confirm it.
+
+Constraints followed while drafting:
+
+- Claims about prior work come only from the 25 verified sources, as stated in their abstracts (or, for course readings, the PDFs), and each such claim carries a citation.
+- logq's design is described from `docs/superpowers/specs/2026-11-07-logq-design.md`; the TeamMatch setup from the pilot branch's commits; integration problems from the earlier para-dashboard pilot's hand-over note.
+- No results were written. Every number the TeamMatch experiment will produce is a red `\todo{}` placeholder, as are the task list, run counts and model id.
+- Every first-person judgment (effective, cumbersome, accessible, recommended) is marked `\todo{user to confirm}`.
