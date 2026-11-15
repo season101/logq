@@ -1,0 +1,288 @@
+% References for the CSC 5323 "Advances" literature review.
+% Every entry was checked on 2026-11-15 against the record named in its `annote` field
+% (Crossref for DOIs, the arXiv API for arXiv IDs, or the publisher's proceedings
+% page for ICLR, NeurIPS and MLSys papers): title, authors, venue and year match.
+% See search-log.md for how each was found.
+
+% ---------------------------------------------------------------- agent-repair
+
+@inproceedings{bouzenia2025repairagent,
+  author    = {Bouzenia, Islem and Devanbu, Premkumar and Pradel, Michael},
+  title     = {{RepairAgent}: An Autonomous, {LLM}-Based Agent for Program Repair},
+  booktitle = {Proceedings of the IEEE/ACM 47th International Conference on Software Engineering (ICSE)},
+  pages     = {2188--2200},
+  year      = {2025},
+  publisher = {IEEE},
+  doi       = {10.1109/ICSE55347.2025.00157},
+  annote      = {Verified via Crossref; arXiv:2403.17134. Course reading (Article 4).}
+}
+
+@article{xia2025agentless,
+  author  = {Xia, Chunqiu Steven and Deng, Yinlin and Dunn, Soren and Zhang, Lingming},
+  title   = {Demystifying {LLM}-Based Software Engineering Agents},
+  journal = {Proceedings of the ACM on Software Engineering},
+  volume  = {2},
+  number  = {FSE},
+  pages   = {801--824},
+  year    = {2025},
+  doi     = {10.1145/3715754},
+  annote    = {FSE 2025. Verified via Crossref; arXiv:2407.01489 (titled ``Agentless''). Course reading (Article 5).}
+}
+
+@inproceedings{jimenez2024swebench,
+  author    = {Jimenez, Carlos E. and Yang, John and Wettig, Alexander and Yao, Shunyu and Pei, Kexin and Press, Ofir and Narasimhan, Karthik},
+  title     = {{SWE}-bench: Can Language Models Resolve Real-World {GitHub} Issues?},
+  booktitle = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://proceedings.iclr.cc/paper_files/paper/2024/hash/edac78c3e300629acfe6cbe9ca88fb84-Abstract-Conference.html},
+  annote      = {Verified via ICLR proceedings page and arXiv:2310.06770.}
+}
+
+@inproceedings{zhang2024autocoderover,
+  author    = {Zhang, Yuntong and Ruan, Haifeng and Fan, Zhiyu and Roychoudhury, Abhik},
+  title     = {{AutoCodeRover}: Autonomous Program Improvement},
+  booktitle = {Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis (ISSTA)},
+  pages     = {1592--1604},
+  year      = {2024},
+  publisher = {ACM},
+  doi       = {10.1145/3650212.3680384},
+  annote      = {Verified via Crossref; arXiv:2404.05427.}
+}
+
+@article{liu2026agentsurvey,
+  author  = {Liu, Junwei and Wang, Kaixin and Chen, Yixuan and Peng, Xin and Chen, Zhenpeng and Zhang, Lingming and Lou, Yiling},
+  title   = {Large Language Model-Based Agents for Software Engineering: A Survey},
+  journal = {ACM Transactions on Software Engineering and Methodology},
+  year    = {2026},
+  doi     = {10.1145/3796507},
+  annote    = {Verified via Crossref (published online 2026-03-05; volume and pages not yet assigned); arXiv:2409.02977.}
+}
+
+% ---------------------------------------------------------------- aci (agent-computer interfaces and tool use)
+
+@inproceedings{yao2023react,
+  author    = {Yao, Shunyu and Zhao, Jeffrey and Yu, Dian and Du, Nan and Shafran, Izhak and Narasimhan, Karthik and Cao, Yuan},
+  title     = {{ReAct}: Synergizing Reasoning and Acting in Language Models},
+  booktitle = {The Eleventh International Conference on Learning Representations (ICLR)},
+  year      = {2023},
+  url       = {https://iclr.cc/virtual/2023/poster/11003},
+  annote      = {Verified via the ICLR 2023 poster page and arXiv:2210.03629 (v3 is the ICLR camera-ready).}
+}
+
+@inproceedings{yang2024sweagent,
+  author    = {Yang, John and Jimenez, Carlos E. and Wettig, Alexander and Lieret, Kilian and Yao, Shunyu and Narasimhan, Karthik and Press, Ofir},
+  title     = {{SWE}-agent: Agent-Computer Interfaces Enable Automated Software Engineering},
+  booktitle = {Advances in Neural Information Processing Systems 37 (NeurIPS)},
+  pages     = {50528--50652},
+  year      = {2024},
+  doi       = {10.52202/079017-1601},
+  annote      = {Verified via Crossref and the NeurIPS proceedings page; arXiv:2405.15793.}
+}
+
+% ---------------------------------------------------------------- runtime-context
+
+@inproceedings{chen2024selfdebug,
+  author    = {Chen, Xinyun and Lin, Maxwell and Sch{\"a}rli, Nathanael and Zhou, Denny},
+  title     = {Teaching Large Language Models to Self-Debug},
+  booktitle = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://proceedings.iclr.cc/paper_files/paper/2024/hash/2460396f2d0d421885997dd1612ac56b-Abstract-Conference.html},
+  annote      = {Verified via ICLR proceedings page and arXiv:2304.05128.}
+}
+
+@inproceedings{zhong2024ldb,
+  author    = {Zhong, Li and Wang, Zilong and Shang, Jingbo},
+  title     = {Debug like a Human: A Large Language Model Debugger via Verifying Runtime Execution Step by Step},
+  booktitle = {Findings of the Association for Computational Linguistics: ACL 2024},
+  pages     = {851--870},
+  year      = {2024},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2024.findings-acl.49},
+  annote      = {Verified via Crossref and the ACL Anthology; arXiv:2402.16906.}
+}
+
+@article{levin2025chatdbg,
+  author  = {Levin, Kyla H. and van Kempen, Nicolas and Berger, Emery D. and Freund, Stephen N.},
+  title   = {{ChatDBG}: Augmenting Debugging with Large Language Models},
+  journal = {Proceedings of the ACM on Software Engineering},
+  volume  = {2},
+  number  = {FSE},
+  pages   = {1892--1913},
+  year    = {2025},
+  doi     = {10.1145/3729355},
+  annote    = {FSE 2025. Verified via Crossref; arXiv:2403.16354.}
+}
+
+@misc{yuan2025debuggym,
+  author        = {Yuan, Xingdi and Moss, Morgane M. and El Feghali, Charbel and Singh, Chinmay and Moldavskaya, Darya and MacPhee, Drew and Caccia, Lucas and Pereira, Matheus and Kim, Minseon and Sordoni, Alessandro and C{\^o}t{\'e}, Marc-Alexandre},
+  title         = {debug-gym: A Text-Based Environment for Interactive Debugging},
+  year          = {2025},
+  eprint        = {2503.21557},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2503.21557},
+  annote          = {arXiv preprint, not peer reviewed. Verified via the arXiv API.}
+}
+
+@article{li2024diff,
+  author  = {Li, Jiawei and Farag{\'o}, David and Petrov, Christian and Ahmed, Iftekhar},
+  title   = {Only diff Is Not Enough: Generating Commit Messages Leveraging Reasoning and Action of Large Language Model},
+  journal = {Proceedings of the ACM on Software Engineering},
+  volume  = {1},
+  number  = {FSE},
+  pages   = {745--766},
+  year    = {2024},
+  doi     = {10.1145/3643760},
+  annote    = {FSE 2024. Verified via Crossref. Course reading (Article 3).}
+}
+
+% ---------------------------------------------------------------- logs-llm
+
+@inproceedings{ma2024llmparser,
+  author    = {Ma, Zeyang and Chen, An Ran and Kim, Dong Jae and Chen, Tse-Hsun and Wang, Shaowei},
+  title     = {{LLMParser}: An Exploratory Study on Using Large Language Models for Log Parsing},
+  booktitle = {Proceedings of the IEEE/ACM 46th International Conference on Software Engineering (ICSE)},
+  pages     = {1--13},
+  year      = {2024},
+  publisher = {ACM},
+  doi       = {10.1145/3597503.3639150},
+  annote      = {Verified via Crossref; arXiv:2404.18001.}
+}
+
+@article{jiang2024lilac,
+  author  = {Jiang, Zhihan and Liu, Jinyang and Chen, Zhuangbin and Li, Yichen and Huang, Junjie and Huo, Yintong and He, Pinjia and Gu, Jiazhen and Lyu, Michael R.},
+  title   = {{LILAC}: Log Parsing using {LLMs} with Adaptive Parsing Cache},
+  journal = {Proceedings of the ACM on Software Engineering},
+  volume  = {1},
+  number  = {FSE},
+  pages   = {137--160},
+  year    = {2024},
+  doi     = {10.1145/3643733},
+  annote    = {FSE 2024. Verified via Crossref; arXiv:2310.01796.}
+}
+
+@inproceedings{jiang2024loghub2,
+  author    = {Jiang, Zhihan and Liu, Jinyang and Huang, Junjie and Li, Yichen and Huo, Yintong and Gu, Jiazhen and Chen, Zhuangbin and Zhu, Jieming and Lyu, Michael R.},
+  title     = {A Large-Scale Evaluation for Log Parsing Techniques: How Far Are We?},
+  booktitle = {Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis (ISSTA)},
+  pages     = {223--234},
+  year      = {2024},
+  publisher = {ACM},
+  doi       = {10.1145/3650212.3652123},
+  annote      = {Verified via Crossref; arXiv:2308.10828.}
+}
+
+% ---------------------------------------------------------------- aiops-rca
+
+@inproceedings{ahmed2023rca,
+  author    = {Ahmed, Toufique and Ghosh, Supriyo and Bansal, Chetan and Zimmermann, Thomas and Zhang, Xuchao and Rajmohan, Saravan},
+  title     = {Recommending Root-Cause and Mitigation Steps for Cloud Incidents using Large Language Models},
+  booktitle = {Proceedings of the IEEE/ACM 45th International Conference on Software Engineering (ICSE)},
+  pages     = {1737--1749},
+  year      = {2023},
+  publisher = {IEEE},
+  doi       = {10.1109/ICSE48619.2023.00149},
+  annote      = {Verified via Crossref; arXiv:2301.03797.}
+}
+
+@inproceedings{chen2024rcacopilot,
+  author    = {Chen, Yinfang and Xie, Huaibing and Ma, Minghua and Kang, Yu and Gao, Xin and Shi, Liu and Cao, Yunjie and Gao, Xuedong and Fan, Hao and Wen, Ming and Zeng, Jun and Ghosh, Supriyo and Zhang, Xuchao and Zhang, Chaoyun and Lin, Qingwei and Rajmohan, Saravan and Zhang, Dongmei and Xu, Tianyin},
+  title     = {Automatic Root Cause Analysis via Large Language Models for Cloud Incidents},
+  booktitle = {Proceedings of the Nineteenth European Conference on Computer Systems (EuroSys)},
+  pages     = {674--688},
+  year      = {2024},
+  publisher = {ACM},
+  doi       = {10.1145/3627703.3629553},
+  annote      = {Verified via Crossref; arXiv:2305.15778.}
+}
+
+@inproceedings{roy2024rcaagents,
+  author    = {Roy, Devjeet and Zhang, Xuchao and Bhave, Rashi and Bansal, Chetan and Las-Casas, Pedro and Fonseca, Rodrigo and Rajmohan, Saravan},
+  title     = {Exploring {LLM}-Based Agents for Root Cause Analysis},
+  booktitle = {Companion Proceedings of the 32nd ACM International Conference on the Foundations of Software Engineering (FSE Companion)},
+  pages     = {208--219},
+  year      = {2024},
+  publisher = {ACM},
+  doi       = {10.1145/3663529.3663841},
+  annote      = {Industry track. Verified via Crossref; arXiv:2403.04123.}
+}
+
+@inproceedings{xu2025openrca,
+  author    = {Xu, Junjielong and Zhang, Qinan and Zhong, Zhiqing and He, Shilin and Zhang, Chaoyun and Lin, Qingwei and Pei, Dan and He, Pinjia and Zhang, Dongmei and Zhang, Qi},
+  title     = {{OpenRCA}: Can Large Language Models Locate the Root Cause of Software Failures?},
+  booktitle = {The Thirteenth International Conference on Learning Representations (ICLR)},
+  year      = {2025},
+  url       = {https://proceedings.iclr.cc/paper_files/paper/2025/hash/d29b8d53678015079e1d245c023e49d2-Abstract-Conference.html},
+  annote      = {Verified via ICLR proceedings page.}
+}
+
+@inproceedings{chen2025aiopslab,
+  author    = {Chen, Yinfang and Shetty, Manish and Somashekar, Gagan and Ma, Minghua and Simmhan, Yogesh and Mace, Jonathan and Bansal, Chetan and Wang, Rujia and Rajmohan, Saravan},
+  title     = {{AIOpsLab}: A Holistic Framework to Evaluate {AI} Agents for Enabling Autonomous Clouds},
+  booktitle = {Proceedings of Machine Learning and Systems 7 (MLSys)},
+  year      = {2025},
+  url       = {https://proceedings.mlsys.org/paper_files/paper/2025/hash/d1f9e4a9f109b6e8b75ed362736f22ec-Abstract-Conference.html},
+  annote      = {Verified via MLSys proceedings page and arXiv:2501.06706.}
+}
+
+% ---------------------------------------------------------------- protocols-safety
+
+@article{hou2026mcp,
+  author  = {Hou, Xinyi and Zhao, Yanjie and Wang, Shenao and Wang, Haoyu},
+  title   = {Model Context Protocol ({MCP}): Landscape, Security Threats, and Future Research Directions},
+  journal = {ACM Transactions on Software Engineering and Methodology},
+  volume  = {35},
+  number  = {10},
+  pages   = {1--37},
+  year    = {2026},
+  doi     = {10.1145/3796519},
+  annote    = {Verified via Crossref; arXiv:2503.23278.}
+}
+
+@inproceedings{greshake2023injection,
+  author    = {Greshake, Kai and Abdelnabi, Sahar and Mishra, Shailesh and Endres, Christoph and Holz, Thorsten and Fritz, Mario},
+  title     = {Not What You've Signed Up For: Compromising Real-World {LLM}-Integrated Applications with Indirect Prompt Injection},
+  booktitle = {Proceedings of the 16th ACM Workshop on Artificial Intelligence and Security (AISec)},
+  pages     = {79--90},
+  year      = {2023},
+  publisher = {ACM},
+  doi       = {10.1145/3605764.3623985},
+  annote      = {Verified via Crossref; arXiv:2302.12173.}
+}
+
+@article{aghili2025logprivacy,
+  author  = {Aghili, Roozbeh and Li, Heng and Khomh, Foutse},
+  title   = {Protecting Privacy in Software Logs: What Should Be Anonymized?},
+  journal = {Proceedings of the ACM on Software Engineering},
+  volume  = {2},
+  number  = {FSE},
+  pages   = {1317--1338},
+  year    = {2025},
+  doi     = {10.1145/3715779},
+  annote    = {FSE 2025. Verified via Crossref; arXiv:2409.11313 (v1 titled ``An Empirical Study of Sensitive Information in Logs'').}
+}
+
+% ---------------------------------------------------------------- context-limits
+
+@article{liu2024lostmiddle,
+  author  = {Liu, Nelson F. and Lin, Kevin and Hewitt, John and Paranjape, Ashwin and Bevilacqua, Michele and Petroni, Fabio and Liang, Percy},
+  title   = {Lost in the Middle: How Language Models Use Long Contexts},
+  journal = {Transactions of the Association for Computational Linguistics},
+  volume  = {12},
+  pages   = {157--173},
+  year    = {2024},
+  doi     = {10.1162/tacl_a_00638},
+  annote    = {Verified via Crossref; arXiv:2307.03172.}
+}
+
+% ---------------------------------------------------------------- eval-method
+
+@inproceedings{ahmed2025annotation,
+  author    = {Ahmed, Toufique and Devanbu, Premkumar and Treude, Christoph and Pradel, Michael},
+  title     = {Can {LLMs} Replace Manual Annotation of Software Engineering Artifacts?},
+  booktitle = {Proceedings of the IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  pages     = {526--538},
+  year      = {2025},
+  publisher = {IEEE},
+  doi       = {10.1109/MSR66628.2025.00086},
+  annote      = {Verified via Crossref. Course reading (Article 2).}
+}

@@ -1,0 +1,70 @@
+% Skeleton for the CSC 5323 "Advances" literature review.
+% Template: ICSE 2027 Research Track requires the IEEE conference proceedings
+% template, \documentclass[10pt,conference]{IEEEtran} without compsoc/compsocconf;
+% 10 pages of main text plus 2 pages of references; double-anonymous review.
+% Source: https://conf.researchr.org/track/icse-2027/icse-2027-research-track (read 2026-11-15).
+% Headings and TODOs only: the prose is the author's to write (course AI policy).
+\documentclass[10pt,conference]{IEEEtran}
+\usepackage{cite}
+\usepackage{url}
+
+\begin{document}
+
+\title{TODO: title}
+% Double-anonymous for a real ICSE submission; for the course, put your name here.
+\author{\IEEEauthorblockN{TODO: author}\IEEEauthorblockA{Louisiana Tech University}}
+\maketitle
+
+\begin{abstract}
+TODO: one paragraph on the problem, the advance (filtered, redacted live runtime context for coding agents), the pilot, and the evaluation result.
+\end{abstract}
+
+\section{Introduction}
+TODO: the debugging problem coding agents face with raw container logs, the advance, and your contributions.
+
+\section{Background and Related Work}
+TODO: one sentence framing how the five groups below relate to the advance.
+
+\subsection{LLM Agents for Debugging and Program Repair}
+TODO: how agentic and agentless repair gather context, and what they leave out at runtime.
+% Sources: jimenez2024swebench, bouzenia2025repairagent, xia2025agentless,
+% zhang2024autocoderover, liu2026agentsurvey
+
+\subsection{Agent--Computer Interfaces and Tool Use}
+TODO: why interface design for agents matters, and where a log/trace interface fits.
+% Sources: yao2023react, yang2024sweagent
+
+\subsection{Runtime and Execution Context for Code LLMs}
+TODO: evidence that execution feedback and debugger state improve LLM debugging.
+% Sources: chen2024selfdebug, zhong2024ldb, levin2025chatdbg, yuan2025debuggym,
+% li2024diff
+
+\subsection{LLMs over Logs and Operational Telemetry}
+TODO: LLM log parsing and LLM/agent root-cause analysis over logs, metrics and traces.
+% Sources: ma2024llmparser, jiang2024lilac, jiang2024loghub2, ahmed2023rca,
+% chen2024rcacopilot, roy2024rcaagents, xu2025openrca, chen2025aiopslab
+
+\subsection{Agent Tool Protocols, Untrusted Context, and Sensitive Data}
+TODO: MCP, prompt injection through tool output, secrets in logs, and context-length limits.
+% Sources: hou2026mcp, greshake2023injection, aghili2025logprivacy,
+% liu2024lostmiddle
+
+\section{Approach}
+TODO: what logq and the Jaeger MCP server give the agent (filtering, redaction, follow, traces), with a figure.
+
+\section{Evaluation}
+TODO: the TeamMatch pilot and before/after debugging experiment: setup, measures, results.
+% Possible method reference for LLM-assisted judging/annotation: ahmed2025annotation
+
+\section{Threats to Validity}
+TODO: internal, external and construct threats of the pilot (single project, single agent, small n).
+
+\section{Conclusion}
+TODO: what the evaluation shows, whether you would recommend the advance, and when.
+
+% TODO: remove \nocite{*} once the sections cite sources with \cite{...}.
+\nocite{*}
+\bibliographystyle{IEEEtran}
+\bibliography{../references}
+
+\end{document}
