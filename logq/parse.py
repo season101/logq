@@ -47,6 +47,9 @@ _CONTINUATION = ("Caused by:", "During handling of the above exception", "The ab
 _TB_JOIN = timedelta(milliseconds=100)  # a traceback header this close to the previous line belongs to it
 _PY_FRAME = re.compile(r'File "(.+)", line (\d+), in (\S+)')
 _AT_FRAME = re.compile(r"\s+at (.+)")
+_PEM_BEGIN = re.compile(r"-----BEGIN [A-Z ]{0,32}PRIVATE KEY-----")
+# A private key printed line by line stays one event, so render can redact all of it: base64, `Proc-Type: …` headers, END.
+_PEM_LINE = re.compile(r"[A-Za-z0-9+/=]*|[\w-]+: .*|-----END [A-Z ]{0,32}PRIVATE KEY-----")
 
 
 @dataclass
@@ -190,6 +193,7 @@ class Grouper:
         self._cur: Event | None = None
         self._last_ts: datetime | None = None  # Docker timestamp of the held event's last line
         self._in_tb = False  # between a traceback header and its summary line
+        self._in_pem = False  # between a private key's BEGIN and END lines
 
     def feed(self, ts: datetime, payload: str) -> list[Event]:
         self.last_feed = self.clock()
@@ -199,12 +203,14 @@ class Grouper:
             return []
         indented = not payload or payload[0].isspace()  # a blank line continues the previous event too
         tb_header = cur is not None and payload.startswith(_TB) and ts - self._last_ts <= _TB_JOIN
-        joins = self._in_tb or indented or tb_header or payload.startswith(_CONTINUATION)
+        pem = self._in_pem and _PEM_LINE.fullmatch(payload) is not None
+        joins = self._in_tb or pem or indented or tb_header or payload.startswith(_CONTINUATION)
         if cur and joins and not payload.startswith("{"):  # a JSON line always starts its own event
             cur.extra.append(payload)
             cur.level = max(cur.level, _plain_level(payload))
             self._last_ts = ts
             self._in_tb = tb_header or (self._in_tb and indented)
+            self._in_pem = pem and not payload.startswith("-----END ")
             return []
         done = self.flush()
         f = parse_payload(payload)
@@ -212,10 +218,11 @@ class Grouper:
         f["service"] = f["service"] or self.service
         self._cur = Event(ts=ts, container=self.container, project=self.project, extra=stack, raw=payload, **f)
         self._last_ts, self._in_tb = ts, payload.startswith(_TB)
+        self._in_pem = _PEM_BEGIN.search(payload) is not None and "-----END " not in payload
         return done
 
     def flush(self) -> list[Event]:
-        ev, self._cur, self._in_tb = self._cur, None, False
+        ev, self._cur, self._in_tb, self._in_pem = self._cur, None, False, False
         return [_finish(ev)] if ev else []
 
     def flush_stale(self, idle_s: float = 0.5) -> list[Event]:

@@ -227,3 +227,68 @@ def test_footer_names_the_project_after_the_containers():
 def test_footer_counts_events_hidden_below_the_default_level():
     assert footer(0, 0, ["api"], "15m", 30, None, [], project="p", below=3) == \
         "-- no matches · 1 container (api) · project p · 15m · level>=warn · 3 more below warn"
+
+SK = "sk_live_" + "4eC39HqLyjWDarjtT1zdp7dc"
+
+@pytest.mark.parametrize("secret,text,expected", [
+    # a quoted value inside a cookie does not end the cookie
+    ("S3ss", 'Cookie: a="x"; sessionid=S3ss next', "Cookie: [REDACTED] next"),
+    # every value of a multi-value header
+    ("BBB2", "map[Authorization:[Basic AAA1 Basic BBB2] X:[1]]", "map[Authorization:[[REDACTED]] X:[1]]"),
+    ("BBB2", '{"Authorization":["Basic AAA1","Basic BBB2"]}', '{"Authorization":["[REDACTED]"]}'),
+    ("S3ss", "map[Set-Cookie:[a=1; Path=/ sid=S3ss]]", "map[Set-Cookie:[[REDACTED]]]"),
+    ("BBB2", "Authorization: Basic AAA1, Basic BBB2 next", "Authorization: [REDACTED] next"),
+    # cookies joined by commas, also after an Expires date
+    ("S3ss", "Cookie: a=1, sessionid=S3ss next", "Cookie: [REDACTED] next"),
+    ("S3ss", "Set-Cookie: a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT, sid=S3ss; Path=/", "Set-Cookie: [REDACTED]"),
+    # escaped JSON inside text
+    ("AAA1", 'body={\\"Authorization\\":\\"Basic AAA1\\",\\"x\\":1}', 'body={\\"Authorization\\":\\"[REDACTED]\\",\\"x\\":1}'),
+    ("hunter2", 'body={\\"password\\":\\"hunter2\\",\\"x\\":1}', 'body={\\"password\\":\\"[REDACTED]\\",\\"x\\":1}'),
+    ("S3ss", 'body={\\"Cookie\\":\\"sid=S3ss; a=1\\"}', 'body={\\"Cookie\\":\\"[REDACTED]\\"}'),
+    # ASGI header tuples
+    ("AAA1", "[(b'host', b'x'), (b'authorization', b'Basic AAA1')]", "[(b'host', b'x'), (b'authorization', b'[REDACTED]')]"),
+    ("S3ss", "[(b'cookie', b'sid=S3ss; a=1')]", "[(b'cookie', b'[REDACTED]')]"),
+    ("abc123", "[(b'x-api-key', b'abc123')]", "[(b'x-api-key', b'[REDACTED]')]"),
+    ("AAA1", "{'Authorization': ('Basic AAA1',)}", "{'Authorization': ('[REDACTED]',)}"),
+    # a key whose value is a list (Django's QueryDict)
+    ("hunter2", "<QueryDict: {'password': ['hunter2', 'x'], 'next': ['/']}>", "<QueryDict: {'password': ['[REDACTED]'], 'next': ['/']}>"),
+    # camelCase and digit key suffixes
+    ("abc123", "passwordHash=abc123", "passwordHash=[REDACTED]"),
+    ("abc123", '{"tokenValue": "abc123"}', '{"tokenValue": "[REDACTED]"}'),
+    ("abc123", "apiKeyId: abc123", "apiKeyId: [REDACTED]"),
+    ("abc123", "secretKeyBase=abc123", "secretKeyBase=[REDACTED]"),
+    ("abc123", "token2=abc123", "token2=[REDACTED]"),
+    # key shapes
+    (SK, f"stripe {SK} ok", "stripe [REDACTED] ok"),
+    ("rk_live_abcdefghij12", "rk_live_abcdefghij12", "[REDACTED]"),
+    ("glpat-xYz123AbC456DeF789gh", "glpat-xYz123AbC456DeF789gh ok", "[REDACTED] ok"),
+    ("AIzaSyD-abcdefghijklmnopqrstuvwxyz01234", "key=AIzaSyD-abcdefghijklmnopqrstuvwxyz01234", "key=[REDACTED]"),
+    ("gho_" + "c" * 36, "gho_" + "c" * 36, "[REDACTED]"),
+    ("ghs_" + "d" * 36, "via ghs_" + "d" * 36, "via [REDACTED]"),
+    ("xoxa-2-abc", "slack xoxa-2-abc", "slack [REDACTED]"),
+    ("xoxe-1-abc", "slack xoxe-1-abc", "slack [REDACTED]"),
+    ("MIIEpAIBAAKCAQEA", "k=-----BEGIN RSA PRIVATE KEY-----\\nMIIEpAIBAAKCAQEA\\n-----END RSA PRIVATE KEY----- ok", "k=[REDACTED] ok"),
+    ("MIIEpAIBAAKCAQEA", "-----BEGIN PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\n-----END PRIVATE KEY-----\nok", "[REDACTED]\nok"),
+    ("MIIEpAIBAAKCAQEA", "-----BEGIN OPENSSH PRIVATE KEY-----\nMIIEpAIBAAKCAQEA", "[REDACTED]"),  # cut short: to the end
+])
+def test_redact_follow_up_leak_probes(secret, text, expected):
+    assert redact(text) == expected and secret not in redact(text)
+    assert redact(redact(text)) == redact(text)
+
+def test_redact_camel_case_needs_a_capital_or_digit():
+    assert redact("passenger=2 tokens=5") == "passenger=2 tokens=5"
+
+def test_redact_follow_up_shapes_stay_linear():
+    start = time.perf_counter()
+    for s in ('Cookie: a="' * 20_000, "Cookie: a=1, " * 20_000, "Set-Cookie: expires=" * 20_000, '\\"' * 50_000,
+              'password=\\"' + '\\\\\\"' * 20_000, "(b'authorization', " * 10_000, "-----BEGIN PRIVATE KEY-----" * 5_000,
+              "tokenA" * 30_000, 'Authorization:["' * 20_000, "Authorization: a, " * 20_000, "Cookie:[" * 20_000):
+        redact(s)
+    assert time.perf_counter() - start < 2
+
+def test_full_event_redacts_a_private_key_split_over_lines():
+    from logq.parse import parse_stream
+    lines = ["-----BEGIN RSA PRIVATE KEY-----", "MIIEpAIBAAKCAQEA", "c2VjcmV0", "-----END RSA PRIVATE KEY-----", "next line"]
+    events = parse_stream([f"2026-11-08T18:04:31.{i}Z {ln}" for i, ln in enumerate(lines)], "api-1", "api", "p")
+    out = "\n".join(format_event(e, TZ, full=True) for e in events)
+    assert "MIIE" not in out and "c2Vj" not in out and "next line" in out
