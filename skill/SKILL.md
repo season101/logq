@@ -50,7 +50,7 @@ Use the `Monitor` tool:
 - `timeout_ms`: `1800000`
 - `description`: names the project, e.g. `logq follow para-dashboard-app-v01`
 
-Each stdout line is one notification, so keep the default `warn` level unless the user asks for more. `follow` prints a start line, then matching events plus container events (`died exit=N`, `oom`, `started`, `restarted`, `removed`, `health: unhealthy`, and `health: healthy` after unhealthy). Repeats collapse into `↻ ... repeated Nx in 30s`. After a restart it re-attaches and reads from the container's start time. `! <container>: <text>` is a Docker error that ended a log stream; `! docker events ended: ...` means restarts are no longer seen and `follow` exits 2, so check `logq ps` before re-arming.
+Each stdout line is one notification, so keep the default `warn` level unless the user asks for more. `follow` prints a start line, then matching events plus container events (`died exit=N`, `oom`, `started`, `restarted`, `removed`, `health: unhealthy`, and `health: healthy` after unhealthy). Repeats collapse into `↻ ... repeated Nx in 30s`. After a restart it re-attaches and reads from the container's start time. `! <container>: <text>` is a Docker error that ended a log stream; `! docker events ended: ...` means restarts are no longer seen: log lines still arrive, but re-arm the Monitor after checking `logq ps`. `follow` exits 2 once its log streams end too, or on a signal.
 
 Re-arm the Monitor when it expires if the user is still reproducing. Stop it with `TaskStop` when done. `follow` takes the same filters as `query`: `-s`, `-l`, `--route`, `-g`. A field filter without `-l` follows every level, so each matching request line is a notification; add `-l warn` to keep it quiet.
 

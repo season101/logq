@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -266,6 +267,22 @@ def test_events_stream_end_is_printed_and_exits_2(evts, shown):
     rc = run_follow("p", [API], Query(), UTC, out=out, open_logs=lambda c, since=None: FakeProc([]),
                     open_events=lambda p, pseudo: FakeProc(evts))
     assert rc == 2 and out.getvalue().splitlines()[-1] == shown
+
+
+def test_logs_keep_printing_after_the_events_stream_ends():
+    out = io.StringIO()
+
+    def logs():
+        for _ in range(500):  # until follow has reported the events stream ending
+            if "docker events ended" in out.getvalue():
+                break
+            time.sleep(0.01)
+        yield "2026-11-08T02:20:07.0Z ERROR after events"
+
+    rc = run_follow("p", [API], Query(), UTC, out=out, open_logs=lambda c, since=None: FakeProc(logs()),
+                    open_events=lambda p, pseudo: FakeProc([]))
+    lines = out.getvalue().splitlines()
+    assert rc == 2 and lines[1] == "! docker events ended: stream closed" and lines[2].endswith("ERROR after events")
 
 
 def test_ended_reader_is_reaped_before_shutdown():

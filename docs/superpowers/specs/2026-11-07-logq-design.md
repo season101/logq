@@ -122,16 +122,16 @@ Output, one line per event:
 Same selection, filters and defaults as `query`, but live:
 
 - Runs `docker logs -f --timestamps --tail 0` per container, one thread each, feeding one queue; the main loop prints and flushes each matching event.
-- Runs `docker events --format '{{json .}}' --filter type=container` (plus the project label filter) and prints container lifecycle events whatever the level filter: `die` with exit code, `oom`, `restart`, `start`, and `health_status` changes to or from `unhealthy`.
+- Runs `docker events --format '{{json .}}' --filter type=container` (plus the project label filter) and prints container lifecycle events, named by container (a service can have several), whatever the level filter: `die` with exit code, `oom`, `restart`, `start`, and `health_status` changes to or from `unhealthy`.
 - On `start` of a container in the project (for example after `docker compose up` recreates it), attaches a new log reader.
-- Repeats are collapsed: the first occurrence of an event key (container, level, HTTP method, route and status, error type or message with UUIDs, numbers and hex normalised) prints; later ones within 30 seconds are counted, and when the window closes logq prints `↻ api ERROR KeyError: 'sku' repeated 39x in 30s` (request lines keep their method, route and status: `↻ api INFO POST /api/orders 500 request finished repeated 3x in 30s`).
+- Repeats are collapsed: the first occurrence of an event key (container, level, HTTP method, route and status, error type or message, with UUIDs, numbers and hex normalised in the route and the message) prints; later ones within 30 seconds are counted, and when the window closes logq prints `↻ api ERROR KeyError: 'sku' repeated 39x in 30s` (request lines keep their method, route and status: `↻ api INFO POST /api/orders 500 request finished repeated 3x in 30s`).
 - Prints one start line, `-- following api, db, storage, web · project para-dashboard-app-v01 · level>=warn`, then runs until killed. Monitor's timeout ends it (SIGTERM; Ctrl-C works the same): logq stops its `docker` children, prints the open repeat windows with the seconds they covered (`repeated 3x in 7s`) and exits 0. The skill tells Claude to re-arm.
 - Docker failures are printed, not swallowed: when a log stream ends with Docker error text while its container still runs, `! <container>: <error line>`; when the `docker events` stream ends, `! docker events ended: <last error line, or "stream closed">`, and `follow` exits 2 once it stops.
 
 ```
-12:10:02.101 ! api oom
-12:10:02.114 ! api died exit=137
-12:10:03.902 ! api started
+12:10:02.101 ! para-dashboard-app-v01-api-1 oom
+12:10:02.114 ! para-dashboard-app-v01-api-1 died exit=137
+12:10:03.902 ! para-dashboard-app-v01-api-1 started
 12:10:09.377 api    ERROR OperationalError: connection to db refused at db/pool.py:88 (+9 lines) trace=1c0e44aa
 ```
 
