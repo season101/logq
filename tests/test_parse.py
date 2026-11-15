@@ -201,3 +201,11 @@ def test_all_zero_ids_are_absent(p, trace, span):
 ])
 def test_common_plain_text_formats(p, level):
     assert parse_payload(p)["level"] == LEVELS[level]
+
+def test_long_lines_parse_in_linear_time():
+    import time
+    start = time.perf_counter()
+    for s in ("a." * 40_000, "a.Error" * 12_000, 'File "' * 14_000, "x Warning" * 9_000):
+        events = parse_stream(["2026-11-08T18:04:31.0Z x", f"2026-11-08T18:04:31.1Z {s}"], "api-1", "api", "p")
+        assert events[-1].msg == s
+    assert time.perf_counter() - start < 1

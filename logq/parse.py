@@ -40,12 +40,14 @@ _GLOG = re.compile(r"([IWEF])\d{4} ")  # glog/klog: `E1108 02:20:07.123456 1 mai
 _GLOG_LEVELS = dict(zip("IWEF", (20, 30, 40, 50)))
 _LEAD = re.compile(r"(error|fatal|panic):", re.I)  # at line start: `error: get filer configuration: ...`
 _LOGFMT = re.compile(r"\blevel=(\w+)")
-_ERR = re.compile(r"\b[\w.]*(?:Error|Exception):")
-_WARN = re.compile(r"\b[\w.]*Warning:")
+# Only ever tested for a match. A `\b[\w.]*` prefix (to span `java.io.IOException:`) matched the same lines but was
+# quadratic on long dotted runs.
+_ERR = re.compile(r"(?:Error|Exception):")
+_WARN = re.compile(r"Warning:")
 _TB = "Traceback (most recent call last):"
 _CONTINUATION = ("Caused by:", "During handling of the above exception", "The above exception was the direct cause")
 _TB_JOIN = timedelta(milliseconds=100)  # a traceback header this close to the previous line belongs to it
-_PY_FRAME = re.compile(r'File "(.+)", line (\d+), in (\S+)')
+_PY_FRAME = re.compile(r'File "([^"\n]+)", line (\d+), in (\S+)')  # not `.+`: quadratic on a long line of `File "`
 _AT_FRAME = re.compile(r"\s+at (.+)")
 _PEM_BEGIN = re.compile(r"-----BEGIN [A-Z ]{0,32}PRIVATE KEY-----")
 # A private key printed line by line stays one event, so render can redact all of it: base64, `Proc-Type: …` headers, END.
