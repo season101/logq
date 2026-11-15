@@ -37,6 +37,7 @@ Exclusion rules: posters, blogs, vendor write-ups, theses, and secondary summary
 - **R2 (after batch 2).** Narrowed "observability" to work where an LLM or agent consumes operational telemetry (logs, metrics, traces) for root-cause analysis, and to log-parsing benchmarks. Added MLSys and EuroSys as venues, since the systems community publishes that work there. Added agents that drive debuggers.
 - **R3 (after batch 3).** Filled gaps: one survey for breadth (TOSEM), venue checks for papers whose venue the earlier results did not state, and log privacy/anonymisation (relevant to redaction).
 - **R4 (selection, to stay within 15–25).** Of several 2025 MCP security preprints, kept one systematic study (Hou et al., since published in TOSEM) rather than all of them. Dropped DivLog because LLMParser and LILAC cover LLM log parsing at the same venues; recent 2026 RCA preprints because OpenRCA and AIOpsLab cover that ground peer-reviewed; and OpenHands because SWE-agent and ReAct already cover agent interfaces.
+- **R5 (selection for the paper, after drafting).** At the student's request ("only highly relevant research papers ... about 5"), the paper cites 6 of the 25 verified sources: those whose findings a logq design decision or the paper's evaluation method rests on directly; where two supported the same point, the one closer to logq's setting was kept. All 25 stay in `references.bib` and `source-matrix.md`; the choice and the reason for each is in [Selection for the paper](#selection-for-the-paper-r5).
 
 ## Searches and what they returned
 
@@ -195,3 +196,27 @@ Constraints followed while drafting:
 ### Pilot results filled in
 
 Later on 2026-11-15, after the TeamMatch pilot finished, the coordinating session relayed the student's go-ahead to fill the paper's factual placeholders. The same model transcribed them from the pilot's committed write-up, `docs/advances/logq-pilot.md` at TeamMatch commit `3616eb4` (the pilot ran in another Claude Code session), into the Evaluation, Threats to Validity, Abstract and Conclusion of `paper/main.tex`. No number was added that is not in that write-up, apart from sums of its per-run figures (the total uncached input tokens in Table II). Judgments marked `\todo{user to confirm}`, the author name, the description of the demo video, the setup time (not in the write-up) and the disclosure's confirmation remain for the student.
+
+## Selection for the paper (R5)
+
+On 2026-11-15 the coordinating session relayed the student's request to shorten the paper and cite about five highly relevant papers. Criterion: keep a source only if a logq design decision or the paper's evaluation method rests directly on its finding; where two sources support the same point, keep the one closer to logq's setting (an agent debugging local containers during development). Six were kept; the other 19 remain verified and listed here and in `source-matrix.md`, but are not cited.
+
+| Source | Decision | Reason |
+|---|---|---|
+| `yang2024sweagent` | kept | Interfaces designed for agents (logq's output is one); its evaluation, varying the interface with model and tasks fixed, is the pilot's method |
+| `roy2024rcaagents` | kept | Closest prior agent that fetches logs and diagnostics through tools; preferred over the other RCA work for that reason |
+| `liu2024lostmiddle` | kept | Why logq filters before the agent reads |
+| `greshake2023injection` | kept | Why log content is treated as data, never as instructions |
+| `aghili2025logprivacy` | kept | Why redaction is always on |
+| `hou2026mcp` | kept | Threats of the Jaeger MCP server the agent reads traces through |
+| `bouzenia2025repairagent` (course reading), `zhang2024autocoderover`, `jimenez2024swebench`, `liu2026agentsurvey` | left out | Repair over code and tests; SWE-agent covers agent interfaces and the evaluation method |
+| `xia2025agentless` (course reading) | left out | Its finding that issue text can leak the fix still shapes the prompt (symptom only), which the paper now states without citing it |
+| `yao2023react` | left out | General agent prompting; Roy et al. is the ReAct agent that matters here |
+| `chen2024selfdebug`, `zhong2024ldb`, `levin2025chatdbg`, `yuan2025debuggym` | left out | Runtime context of a single process (execution results, variable values, a debugger), not logs across containers |
+| `li2024diff` (course reading) | left out | Context beyond the diff for commit messages; indirect |
+| `ma2024llmparser`, `jiang2024lilac`, `jiang2024loghub2` | left out | LLM log parsing; logq relies on a logging contract instead |
+| `ahmed2023rca`, `chen2024rcacopilot` | left out | LLM root-cause analysis with fixed prompts or handlers; Roy et al.'s tool-using agent is closer |
+| `xu2025openrca`, `chen2025aiopslab` | left out | RCA benchmark and fault-injection environment; the pilot uses neither |
+| `ahmed2025annotation` (course reading) | left out | LLM annotators; the pilot grades against the seeded change with no LLM judge |
+
+Related Work was rewritten around the six; the Approach, Evaluation and Threats were shortened to match. Pilot numbers and the student's `\todo{}` items are unchanged.
