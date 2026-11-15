@@ -62,7 +62,7 @@ class BlockingProc(FakeProc):
 
 def docker_event(action, cid="id1", service="api"):
     return json.dumps({"Action": action, "id": cid, "timeNano": 1762625402114000000,
-                       "Actor": {"ID": cid, "Attributes": {"com.docker.compose.service": service}}})
+                       "Actor": {"ID": cid, "Attributes": {"com.docker.compose.service": service, "name": f"p-{service}-1"}}})
 
 
 def test_collapser_window():
@@ -95,6 +95,12 @@ def test_collapser_key_includes_http_fields():
     assert col.offer(ev(msg="request finished", method="POST", route="/api/users", status=500)) is True
     assert col.offer(ev(msg="request finished", method="POST", route="/api/orders", status=500)) is False
 
+def test_collapser_key_ignores_numbers_in_the_route():
+    col = Collapser(30, clock=lambda: 0.0)
+    assert col.offer(ev(msg="request finished", method="GET", route="/api/orders/1", status=404)) is True
+    assert col.offer(ev(msg="request finished", method="GET", route="/api/orders/2", status=404)) is False
+    assert col.offer(ev(msg="request finished", method="GET", route="/api/users/2", status=404)) is True
+
 def test_collapser_keeps_count_of_window_closed_before_due():
     now = [0.0]
     col = Collapser(30, clock=lambda: now[0])
@@ -113,23 +119,23 @@ def test_flush_stale():
 
 def test_run_follow_with_fake_sources():
     logs = {"api-1": ["2026-11-08T02:20:07.0Z INFO ok", "2026-11-08T02:20:08.0Z ERROR boom"]}
-    evts = ['{"Action":"die","timeNano":1762625402114000000,"Actor":{"Attributes":{"com.docker.compose.service":"api","exitCode":"1"}}}']
+    evts = ['{"Action":"die","timeNano":1762625402114000000,"Actor":{"Attributes":{"com.docker.compose.service":"api","name":"p-api-1","exitCode":"1"}}}']
     out = io.StringIO()
     run_follow("p", [API], Query(), UTC, out=out,
                open_logs=lambda c, since=None: FakeProc(logs[c.name]), open_events=lambda p, pseudo: FakeProc(evts))
     text = out.getvalue()
     assert text.splitlines()[0] == "-- following api · project p · level>=warn"
-    assert "ERROR boom" in text and "! api died exit=1" in text and "INFO ok" not in text
+    assert "ERROR boom" in text and "! p-api-1 died exit=1" in text and "INFO ok" not in text
 
 def test_run_follow_attaches_recreated_container(monkeypatch):
     new = Container("id2", "api-2", "p", "api", "/w/p", "running", None, 0, 0, None, None)
     monkeypatch.setattr("logq.docker.inspect", lambda ids: [new] if ids == ["id2"] else [])
-    evts = ['{"Action":"start","id":"id2","timeNano":1762625402114000000,"Actor":{"ID":"id2","Attributes":{"com.docker.compose.service":"api"}}}']
+    evts = ['{"Action":"start","id":"id2","timeNano":1762625402114000000,"Actor":{"ID":"id2","Attributes":{"com.docker.compose.service":"api","name":"p-api-2"}}}']
     logs = {"api-1": [], "api-2": ["2026-11-08T02:20:09.0Z ERROR after recreate"]}
     out = io.StringIO()
     run_follow("p", [API], Query(), UTC, out=out,
                open_logs=lambda c, since=None: FakeProc(logs[c.name]), open_events=lambda p, pseudo: FakeProc(evts))
-    assert "! api started" in out.getvalue() and "ERROR after recreate" in out.getvalue()
+    assert "! p-api-2 started" in out.getvalue() and "ERROR after recreate" in out.getvalue()
 
 def test_health_prints_only_changes_to_or_from_unhealthy():
     evts = ["Error response from daemon: not json", "[1, 2]"]  # stderr text and non-object JSON are skipped
@@ -138,7 +144,7 @@ def test_health_prints_only_changes_to_or_from_unhealthy():
     out = io.StringIO()
     run_follow("p", [API], Query(), UTC, out=out, open_logs=lambda c, since=None: FakeProc([]), open_events=lambda p, pseudo: FakeProc(evts))
     assert [line.split(" ", 1)[1] for line in out.getvalue().splitlines()[1:]] == [
-        "! api health: unhealthy", "! api health: unhealthy", "! api health: healthy",
+        "! p-api-1 health: unhealthy", "! p-api-1 health: unhealthy", "! p-api-1 health: healthy",
         "docker events ended: Error response from daemon: not json"]  # the stream ending is reported too
 
 def test_start_attaches_only_selected_services(monkeypatch):
@@ -152,7 +158,7 @@ def test_start_attaches_only_selected_services(monkeypatch):
 
     run_follow("p", [API], Query(services=["api"]), UTC, out=out, open_logs=open_logs,
                open_events=lambda p, pseudo: FakeProc([docker_event("start", "id3", "web")]))
-    assert opened == ["api-1"] and "! web started" in out.getvalue()
+    assert opened == ["api-1"] and "! p-web-1 started" in out.getvalue()
 
 def test_restart_while_reader_runs_attaches_after_it_ends(monkeypatch):
     restarted = Container("id1", "api-1", "p", "api", "/w/p", "running", None, 0, 0, STARTED, None)  # a restart keeps the id

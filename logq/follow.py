@@ -28,7 +28,8 @@ class Collapser:
         self._closed: list[list] = []
 
     def offer(self, e: Event) -> bool:
-        key, now = (e.container, e.level, e.method, e.route, e.status, _NUMS.sub("#", e.error or e.msg)), self.clock()
+        route = e.route and _NUMS.sub("#", e.route)  # `/api/orders/1` and `/2` are one repeat
+        key, now = (e.container, e.level, e.method, route, e.status, _NUMS.sub("#", e.error or e.msg)), self.clock()
         w = self._open.get(key)
         if w and now - w[1] < self.window_s:
             w[2] += 1

@@ -116,7 +116,7 @@ def format_docker_event(evt: dict, tz: tzinfo | None) -> str | None:
     if what is None:
         return None
     ts = datetime.fromtimestamp(0, timezone.utc) + timedelta(microseconds=evt["timeNano"] // 1000)  # integer math keeps the ms exact
-    return redact(f"{_clock(ts, tz)} ! {a.get('com.docker.compose.service') or a.get('name', '?')} {what}")
+    return redact(f"{_clock(ts, tz)} ! {a.get('name', '?')} {what}")  # the container: a service can have several
 
 
 def format_repeat(e: Event, count: int, seconds: float) -> str:

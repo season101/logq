@@ -186,10 +186,13 @@ def test_container_alert_other_states():
 
 def test_docker_events():
     base = {"timeNano": 1762625402114000000, "Actor": {"Attributes": {"com.docker.compose.service": "api", "name": "p-api-1", "exitCode": "137"}}}
-    assert format_docker_event({**base, "Action": "die"}, UTC).endswith("! api died exit=137")
-    assert format_docker_event({**base, "Action": "oom"}, UTC).endswith("! api oom")
-    assert format_docker_event({**base, "Action": "health_status: unhealthy"}, UTC).endswith("! api health: unhealthy")
-    assert format_docker_event({**base, "Action": "destroy"}, UTC).endswith("! api removed")
+    assert format_docker_event({**base, "Action": "die"}, UTC).endswith("! p-api-1 died exit=137")
+    assert format_docker_event({**base, "Action": "oom"}, UTC).endswith("! p-api-1 oom")
+    assert format_docker_event({**base, "Action": "health_status: unhealthy"}, UTC).endswith("! p-api-1 health: unhealthy")
+    assert format_docker_event({**base, "Action": "destroy"}, UTC).endswith("! p-api-1 removed")
+    # the container name, not the service: a scaled service or `-p all` would make the service ambiguous
+    scaled = {**base, "Action": "die", "Actor": {"Attributes": {**base["Actor"]["Attributes"], "name": "p-api-2"}}}
+    assert format_docker_event(scaled, UTC).endswith("! p-api-2 died exit=137")
     assert format_docker_event({**base, "Action": "exec_start: sh"}, UTC) is None
 
 def test_docker_event_time_actions_and_name_fallback():
