@@ -220,3 +220,7 @@ On 2026-11-15 the coordinating session relayed the student's request to shorten 
 | `ahmed2025annotation` (course reading) | left out | LLM annotators; the pilot grades against the seeded change with no LLM judge |
 
 Related Work was rewritten around the six; the Approach, Evaluation and Threats were shortened to match. Pilot numbers and the student's `\todo{}` items are unchanged.
+
+## Plain-language rewrite
+
+Later on 2026-11-15 the coordinating session relayed the student's request to rewrite the paper "like a student novice wrote it". The same model (Claude Opus 5.5, `claude-opus-5-5`) rewrote `paper/main.tex` in plain language: short sentences, first person, and a one-clause explanation of each technical term the first time it appears. The six cited sources, their claims, every pilot number and every `\todo{}` stayed the same. The results table keeps task, condition, root cause, turns, cost and log-plus-trace characters; the other columns are in the pilot write-up. No deliberate errors or other tricks to make the text look human-written were added. The AI Assistance Disclosure now also states that the plain-language wording is the model's draft.

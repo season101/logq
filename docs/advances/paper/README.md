@@ -6,7 +6,7 @@ The bibliography is `../references.bib`, styled with `IEEEtran.bst`. Red `[TODO:
 
 ## Building
 
-No PDF is committed: this machine has no LaTeX install, and the local `texlive/texlive:latest-small` Docker image lacks `IEEEtran.cls`. The draft was compiled in that image with a stand-in `article` class set to IEEEtran's text and column widths, Times, and a Courier-width typewriter font: 6 pages, the 6 sources it cites listed (the other 19 verified entries stay in the bib, uncited), no overfull boxes, no BibTeX warnings. That stand-in reproduces the Fig. 1 overflow Overleaf reported but not every IEEEtran underfull box, so check the real compile. To build the real thing, either:
+No PDF is committed: this machine has no LaTeX install, and the local `texlive/texlive:latest-small` Docker image lacks `IEEEtran.cls`. The draft was compiled in that image with a stand-in `article` class set to IEEEtran's text and column widths, Times, and a Courier-width typewriter font: 5 pages (also with a shorter text height and a small-print bibliography), the 6 sources it cites listed (the other 19 verified entries stay in the bib, uncited), no overfull boxes, no BibTeX warnings. That stand-in reproduces the Fig. 1 overflow Overleaf reported but not every IEEEtran underfull box, so check the real compile. To build the real thing, either:
 
 - upload `main.tex` and `../references.bib` to Overleaf (it ships IEEEtran) and fix the `\bibliography` path, or
 - install the class into the container first (downloads it from CTAN):
