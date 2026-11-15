@@ -191,3 +191,7 @@ Constraints followed while drafting:
 - logq's design is described from `docs/superpowers/specs/2026-11-07-logq-design.md`; the TeamMatch setup from the pilot branch's commits; integration problems from the earlier para-dashboard pilot's hand-over note.
 - No results were written. Every number the TeamMatch experiment will produce is a red `\todo{}` placeholder, as are the task list, run counts and model id.
 - Every first-person judgment (effective, cumbersome, accessible, recommended) is marked `\todo{user to confirm}`.
+
+### Pilot results filled in
+
+Later on 2026-11-15, after the TeamMatch pilot finished, the coordinating session relayed the student's go-ahead to fill the paper's factual placeholders. The same model transcribed them from the pilot's committed write-up, `docs/advances/logq-pilot.md` at TeamMatch commit `3616eb4` (the pilot ran in another Claude Code session), into the Evaluation, Threats to Validity, Abstract and Conclusion of `paper/main.tex`. No number was added that is not in that write-up, apart from sums of its per-run figures (the total uncached input tokens in Table II). Judgments marked `\todo{user to confirm}`, the author name, the description of the demo video, the setup time (not in the write-up) and the disclosure's confirmation remain for the student.
