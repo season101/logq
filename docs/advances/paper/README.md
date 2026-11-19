@@ -12,7 +12,7 @@ No PDF is committed: this machine has no LaTeX install, and the local `texlive/t
 - install the class and the Courier font into the container first (downloads both from CTAN; without `courier`, every `\texttt` comes out blank):
 
 ```bash
-cd docs/advances && tar c paper references.bib | docker --context desktop-linux run -i --rm texlive/texlive:latest-small sh -c 'mkdir /w && tar x -C /w && cd /w/paper && tlmgr install ieeetran courier >&2 && pdflatex main >&2 && bibtex main >&2 && pdflatex main >&2 && pdflatex main >&2 && cat main.pdf' > paper/main.pdf
+cd docs/advances && tar c paper references.bib | docker --context desktop-linux run -i --rm texlive/texlive:latest-small sh -c 'mkdir /w && tar x -C /w && cd /w/paper && (tlmgr install ieeetran courier || tlmgr install ieeetran courier) >&2 && pdflatex main >&2 && bibtex main >&2 && pdflatex main >&2 && pdflatex main >&2 && cat main.pdf' > paper/main.pdf
 ```
 
 ## To do (author)

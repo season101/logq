@@ -66,14 +66,12 @@ In the rest of this paper I give a short literature review (Section~\ref{sec:rel
 \begin{figure*}[t]
 \centering\scriptsize
 \begin{verbatim}
-! para-dashboard-app-v01-web-1 exited(1) 40s ago
-12:04:31.180 worker WARN  retrying charge attempt=2 trace=7f3a9c21
-12:04:31.214 api    ERROR KeyError: 'sku' at orders/views.py:42 in create_order (+14 lines) trace=7f3a9c21
-12:04:31.220 api    INFO  POST /api/orders 500 812ms create_order request finished trace=7f3a9c21
--- 3 of 3 matches · 4 containers (api, worker, db, web) · project para-dashboard-app-v01
-   · 15m · level>=debug · trace=7f3a9c21
+22:02:14.375 api    WARN  403 log_response Forbidden: /api/v1/projects/ trace=f20b5ca6
+22:02:14.375 api    INFO  GET /api/v1/projects/ 403 5ms process_response request finished trace=f20b5ca6
+-- 2 of 2 matches · 1 container (api) · project teammatch-logq · 15m · level>=debug · trace=f20b5ca6
+-- view in Jaeger: http://localhost:16686/trace/f20b5ca69c8a1e1e8791224d100d1f39
 \end{verbatim}
-\caption{Example output of \cmd{logq query --trace 7f3a9c21}, from the design document, written for my earlier pilot app: a crashed container first, one request's lines from two services in time order, a long error folded into one line, and a footer that says what was searched (one line in the terminal, wrapped here to fit).}\label{fig:query}
+\caption{Output of \cmd{logq query -p teammatch-logq -s api --trace} with a request's trace ID, run on TeamMatch for an unauthenticated request to its API: the request's warning and its ``request finished'' line, joined by the trace ID, a footer that says what was searched, and a link to the trace in Jaeger.}\label{fig:query}
 \end{figure*}
 
 \emph{Reading and redacting.} logq reads JSON log lines using the standard OpenTelemetry field names and those of common logging libraries, guesses the level of plain-text lines, and folds a Python traceback, the multi-line report of an error, into one line. Redaction means replacing a secret with \cmd{[REDACTED]}. logq redacts every line it prints, and this cannot be turned off. It hides login tokens, authorization and cookie headers, JWTs (a common kind of login token), values after names like \cmd{password} or \cmd{token}, passwords inside URLs, and known API key formats. I chose to hide too much rather than too little. Redaction is only a safety net: logq's logging contract (below) also tells apps not to log secrets or personal data in the first place~\cite{aghili2025logprivacy}.
@@ -92,7 +90,7 @@ For the pilot I changed only the API, on a branch that is not merged. I added JS
 
 When I ran the app, every response's request ID matched its trace ID, and asking logq for that ID returned the request's line and a Jaeger link. Traces had Django, SQL and Redis spans, and one chat message over the WebSocket created 24 spans. When I stopped only the Redis container, \cmd{logq follow} printed that the container exited and that the API returned a 503 error, with its trace ID. TeamMatch does not use file storage yet, so I could not trace storage calls. When I turned body capture on, a sign-in request showed the password as \cmd{[REDACTED]}. The redactor also hid a harmless field whose name contains ``password'', and it did not hide email addresses.
 
-\emph{Problems with the logging contract.} My earlier pilot on another Django app, under gunicorn, found six problems in the contract's setup steps. TeamMatch runs under uvicorn, an ASGI (async) Python web server. Three of the six problems happened again, with the same fixes; for example, adding trace IDs to log lines needed an OpenTelemetry package that is not installed by default. ASGI and Channels added new ones: Django's tracing covers ASGI requests only with a separate package that the contract does not mention, and WebSocket handlers get no span unless the Channels router is wrapped in OpenTelemetry's ASGI middleware. One gap remains: an error that escapes a WebSocket handler is logged after its span has ended, so it has no trace ID.
+\emph{Problems with the logging contract.} TeamMatch runs under uvicorn, an ASGI (async) Python web server, and following the contract there took several fixes. Adding trace IDs to log lines needed an OpenTelemetry package that is not installed by default; Django's tracing covers ASGI requests only with a separate package that the contract does not mention; and WebSocket handlers get no span unless the Channels router is wrapped in OpenTelemetry's ASGI middleware. One gap remains: an error that escapes a WebSocket handler is logged after its span has ended, so it has no trace ID.
 
 \subsection{Research Questions}
 
@@ -152,7 +150,7 @@ Almost all of the gap comes from T3 (4 turns against 9): one filtered \cmd{logq 
 
 \emph{Effective?} Yes. With the same success in both conditions, logq used fewer turns, about 20\% lower estimated cost and a third fewer characters of logs and traces. It helped most on T3, where one filtered query showed the Redis error that the baseline had to find in raw logs.
 
-\emph{Cumbersome?} Most of the work comes before logq is useful: an app has to follow the logging contract before logq can filter by trace or route, and my earlier pilot showed that the setup steps can fail without any error. For TeamMatch it was not cumbersome: the setup took at most about 45 minutes with Claude Code's help.
+\emph{Cumbersome?} Most of the work comes before logq is useful: an app has to follow the logging contract before logq can filter by trace or route, and some setup steps can fail without any error: on TeamMatch, WebSocket handlers got no span until the Channels router was wrapped. For TeamMatch it was not cumbersome: the setup took at most about 45 minutes with Claude Code's help.
 
 \emph{Accessible?} logq needs Python, the Docker command line and, for traces, a local Jaeger container. There is no server to deploy. Yes, I found it accessible.
 
