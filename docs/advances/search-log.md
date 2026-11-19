@@ -224,3 +224,7 @@ Related Work was rewritten around the six; the Approach, Evaluation and Threats 
 ## Plain-language rewrite
 
 Later on 2026-11-15 the coordinating session relayed the student's request to rewrite the paper "like a student novice wrote it". The same model (Claude Opus 5.5, `claude-opus-5-5`) rewrote `paper/main.tex` in plain language: short sentences, first person, and a one-clause explanation of each technical term the first time it appears. The six cited sources, their claims, every pilot number and every `\todo{}` stayed the same. The results table keeps task, condition, root cause, turns, cost and log-plus-trace characters; the other columns are in the pilot write-up. No deliberate errors or other tricks to make the text look human-written were added. The AI Assistance Disclosure now also states that the plain-language wording is the model's draft.
+
+## Disclosure moved to a cover page
+
+On 2026-11-18 the student said the class instruction is for the paper to stand alone and for AI use to be described on a separate front cover submitted with it. At the student's request, the AI Assistance Disclosure was moved unchanged from `paper/main.tex` to `paper/cover.tex`. The paper still documents the AI search workflow (model, criteria, link to this log) in its Literature Review, as the assignment requires, and still names the model as the agent tested in the pilot.

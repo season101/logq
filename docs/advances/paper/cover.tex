@@ -1,0 +1,27 @@
+% Front cover for the CSC 5323 "Advances" submission: the AI use statement.
+% The class asks for the paper to stand alone and for AI use to be described on a
+% separate cover page. This text is the paper's former AI Assistance Disclosure,
+% moved here unchanged on 2026-11-18. Build it like main.tex (no BibTeX needed).
+\documentclass[10pt,conference,onecolumn]{IEEEtran}
+\usepackage{xcolor}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+\begin{document}
+
+\title{AI Use Statement}
+\author{\IEEEauthorblockN{Sijan Malla}\IEEEauthorblockA{Louisiana Tech University}}
+\maketitle
+
+\noindent For the paper ``Helping AI Coding Agents Read Container Logs: A Literature Review and a Pilot of logq'' (CSC 5323, Advances).
+
+\bigskip
+I prepared this paper with Claude Code using the model Claude Opus 5.5 (model id \cmd{claude-opus-5-5}). The model ran the literature search and verified every source. At my request, the paper cites only the six most relevant of the 25 verified sources; the model made that selection. The model also drafted the prose of every section: the Abstract, Introduction, Literature Review, the description of logq (from the logq design specification), the Pilot, Limitations, and Conclusion. At my request, the model then rewrote the whole paper in simpler, plain-language wording and in my first-person voice; that wording is also the model's draft, not my own writing. logq's code, the TeamMatch integration and the experiment were also written and run in Claude Code sessions that I directed. The model transcribed the pilot's numbers and observations from the pilot's committed write-up in the TeamMatch repository (\cmd{docs/advances/logq-pilot.md}), and the six measured debugging runs themselves used \cmd{claude-opus-5-5}. It did not invent results; the judgments marked for me are mine to make.
+
+\bigskip
+\todo{user to confirm: the instructor's permission for AI-drafted sections and its conditions}
+
+\bigskip
+I reviewed every section with the model and directed the edits: I moved the AI statement to this cover, cut the literature review to the top six papers without the search-record link, asked for plainer wording in several places, and gave the setup-time statement and the microservices recommendation in my own words. I decided every judgment in the Discussion and Conclusion; the model wrote them up from my answers and the pilot's results.
+
+\end{document}
