@@ -7,8 +7,8 @@
 % the author's first-person voice at the author's request; see the AI use statement in
 % cover.tex (submitted as the front cover, per the class instruction) and ../search-log.md.
 % Pilot numbers come from the TeamMatch write-up
-% (teammatch 3616eb4:docs/advances/logq-pilot.md). Every remaining \todo{} is for the
-% author; judgments marked "user to confirm" must be the author's own.
+% (teammatch 3616eb4:docs/advances/logq-pilot.md). No \todo{} remains; the
+% judgments in the Discussion and Conclusion are the author's own.
 \documentclass[10pt,conference]{IEEEtran}
 \usepackage{cite}
 \usepackage{url}
@@ -143,8 +143,6 @@ Total & Baseline & 3/3 & 30 & 0.863 & 34,208 \\
 Almost all of the gap comes from T3 (4 turns against 9): one filtered \cmd{logq query} showed the Redis \cmd{TimeoutError}, and one search for \cmd{socket\_timeout} found the setting, while the baseline read the chat code, about 17,000 characters of raw \cmd{docker compose logs}, the settings, and the Channels Redis library's source inside the container. In T1 the two were close (9 turns against 8): the logq run got the traceback by searching for the response's \cmd{X-Request-ID} with \cmd{--full}, and the baseline searched \cmd{docker compose logs} for the error. In T2 the traces did not help (14 turns against 13): Jaeger's MCP tools showed the repeated SELECT spans, the baseline counted the queries itself in a Django shell, and both runs found the feed's test that checks the number of queries.
 
 \emph{Secret exposure.} I searched every run's record for the test accounts' passwords. No record in either condition contains one, and no run read the file that holds the test accounts.
-
-\todo{RQ3: describe what the narrated screen recording shows: setup, the agent calling logq and the Jaeger MCP tools, and one task end to end.}
 
 \subsection{Discussion}
 

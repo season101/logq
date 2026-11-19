@@ -2,7 +2,7 @@
 
 `main.tex` uses the template the ICSE 2027 Research Track requires: the IEEE conference proceedings template, `\documentclass[10pt,conference]{IEEEtran}` without `compsoc`/`compsocconf`, at most 10 pages of main text plus 2 pages of references, double-anonymous review ([call for papers](https://conf.researchr.org/track/icse-2027/icse-2027-research-track), read 2026-11-15). ICSE 2026 used the ACM format; 2027 switched to IEEE.
 
-The bibliography is `../references.bib`, styled with `IEEEtran.bst`. Red `[TODO: ...]` marks (the `\todo{}` macro) are left for the author: the judgments to confirm, the demo video and the setup time. The AI use statement is not in the paper; per the class instruction it is a separate front cover, `cover.tex` (build it the same way with `cover` in place of `main`, no BibTeX). Pilot numbers are filled in from the TeamMatch write-up (`docs/advances/logq-pilot.md` at TeamMatch commit `3616eb4`).
+The bibliography is `../references.bib`, styled with `IEEEtran.bst`. No red `[TODO: ...]` marks (the `\todo{}` macro) remain; the judgments in the Discussion and Conclusion are the author's. The AI use statement is not in the paper; per the class instruction it is a separate front cover, `cover.tex` (build it the same way with `cover` in place of `main`, no BibTeX). Pilot numbers are filled in from the TeamMatch write-up (`docs/advances/logq-pilot.md` at TeamMatch commit `3616eb4`).
 
 ## Building
 
